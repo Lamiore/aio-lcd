@@ -264,6 +264,12 @@ terutama kalau angka USB-nya berbeda.
 
 ---
 
+## Lisensi
+
+**GPL-3.0**, mengikuti [turing-smart-screen-python][upstream]. `config/config.yaml`
+adalah salinan berkas konfigurasi upstream, jadi repo ini memuat karya turunan
+proyek GPL — lisensi yang sama dipakai supaya statusnya jelas.
+
 ## Terima kasih
 
 Pekerjaan beratnya milik [mathoudebine/turing-smart-screen-python][upstream] —
