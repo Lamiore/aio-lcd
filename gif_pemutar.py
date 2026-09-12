@@ -183,6 +183,8 @@ def main() -> int:
                    help=f"sisi area tayang; {KANVAS} berarti layar penuh (baku: 240)")
     p.add_argument("--kecerahan", type=int, default=20, help="0-100 (baku: 20)")
     p.add_argument("--ulang", type=int, default=0, help="jumlah putaran; 0 = terus-menerus")
+    p.add_argument("--latar", choices=("buram", "hitam"), default="buram",
+                   help="isi sisi kosong saat GIF lebih kecil dari layar (baku: buram)")
     a = p.parse_args()
 
     if not a.gif.is_file():
@@ -248,8 +250,16 @@ def main() -> int:
             terbalik = False
         lcd.SetOrientation(Orientation.REVERSE_PORTRAIT if terbalik else Orientation.PORTRAIT)
 
-        # Bersihkan sisa tampilan monitor di luar area GIF sekali saja.
-        lcd.DisplayPILImage(Image.new("RGB", (KANVAS, KANVAS), (0, 0, 0)), 0, 0)
+        # Bersihkan sisa tampilan monitor di luar area GIF — sekali saja, jadi
+        # tidak ikut membebani pemutaran. Latar buram mengisi sisi yang kosong
+        # tanpa menaikkan biaya tiap bingkai: yang ditimpa berulang cuma area
+        # GIF di tengah.
+        if a.latar == "buram" and a.ukuran < KANVAS:
+            latar = lg.latar_buram(bingkai[0].gambar, KANVAS)
+        else:
+            latar = Image.new("RGB", (KANVAS, KANVAS), (0, 0, 0))
+        lcd.DisplayPILImage(latar, 0, 0)
+
         print("mulai memutar", flush=True)
         putar(lcd, bingkai, a.ukuran, a.ulang)
         print("berhenti", flush=True)

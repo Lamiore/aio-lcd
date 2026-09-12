@@ -237,6 +237,24 @@ class UjiDelta(unittest.TestCase):
         self.assertGreater(r["fps_sanggup"], r["fps_sanggup_penuh"] * 2)
 
 
+class UjiLatarBuram(unittest.TestCase):
+    def test_seukuran_kanvas(self):
+        im = Image.new("RGB", (240, 240), (200, 30, 40))
+        self.assertEqual(lg.latar_buram(im, 480).size, (480, 480))
+
+    def test_tidak_digelapkan_secara_baku(self):
+        # GIF berlatar terang: kalau digelapkan, latarnya jadi abu-abu datar
+        # dan sambungan dengan GIF di tengah malah kelihatan.
+        putih = Image.new("RGB", (240, 240), (255, 255, 255))
+        hasil = lg.latar_buram(putih, 480)
+        self.assertGreater(min(hasil.getpixel((10, 10))), 240, "latar putih jadi gelap")
+
+    def test_bisa_digelapkan_kalau_diminta(self):
+        putih = Image.new("RGB", (240, 240), (255, 255, 255))
+        hasil = lg.latar_buram(putih, 480, terang=0.4)
+        self.assertLess(max(hasil.getpixel((10, 10))), 150)
+
+
 class UjiPosisi(unittest.TestCase):
     def test_layar_penuh_di_pojok(self):
         self.assertEqual(lg.posisi_tengah(480), (0, 0))

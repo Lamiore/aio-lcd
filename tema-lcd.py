@@ -494,8 +494,15 @@ class Jendela(Adw.ApplicationWindow):
         keterangan.add_css_class("dim-label")
         keterangan.set_margin_top(8)
 
+        isi_sisi = Adw.SwitchRow(
+            title="Isi sisi kosong",
+            subtitle="Latar buram dari GIF-nya, digambar sekali — tidak menurunkan fps",
+        )
+        isi_sisi.set_active(True)
+
         grup = Adw.PreferencesGroup()
         grup.add(pilihan)
+        grup.add(isi_sisi)
         kotak = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         kotak.set_size_request(360, -1)
         kotak.append(grup)
@@ -503,6 +510,8 @@ class Jendela(Adw.ApplicationWindow):
 
         def segarkan(*_):
             u = ukuran[pilihan.get_selected()]
+            # Di layar penuh tidak ada sisi yang perlu diisi.
+            isi_sisi.set_sensitive(u < lg.KANVAS_BAKU)
             try:
                 r = lg.ringkasan(jalur, u)
             except (OSError, ValueError) as galat:
@@ -537,7 +546,10 @@ class Jendela(Adw.ApplicationWindow):
         def jawab(_d, resp):
             if resp != "putar":
                 return
-            berhasil, pesan = lk.mulai_gif(jalur, ukuran[pilihan.get_selected()])
+            berhasil, pesan = lk.mulai_gif(
+                jalur, ukuran[pilihan.get_selected()],
+                latar="buram" if isi_sisi.get_active() else "hitam",
+            )
             self._toast(pesan)
             if berhasil:
                 # Pemutar butuh beberapa detik membangunkan panel; pantau

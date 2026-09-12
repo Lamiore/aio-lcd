@@ -251,7 +251,7 @@ def pid_pemutar_gif() -> int:
     return int(keluaran) if keluaran.isdigit() else 0
 
 
-def mulai_gif(jalur_gif, ukuran: int, kecerahan: int = 20) -> tuple[bool, str]:
+def mulai_gif(jalur_gif, ukuran: int, kecerahan: int = 20, latar: str = "buram") -> tuple[bool, str]:
     """Putar GIF sebagai unit sementara.
 
     `ExecStopPost` sengaja dipasang di unitnya, bukan cuma diandalkan pada blok
@@ -275,6 +275,7 @@ def mulai_gif(jalur_gif, ukuran: int, kecerahan: int = 20) -> tuple[bool, str]:
             "--gif", str(jalur_gif),
             "--ukuran", str(ukuran),
             "--kecerahan", str(kecerahan),
+            "--latar", latar,
         ],
         capture_output=True, text=True, check=False,
     )

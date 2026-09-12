@@ -169,6 +169,32 @@ class Perintah:
     durasi: float
 
 
+def latar_buram(
+    bingkai: Image.Image, kanvas: int = KANVAS_BAKU, kabur: int = 18, terang: float = 1.0
+) -> Image.Image:
+    """Latar sekanvas penuh dari bingkai GIF, dibesarkan lalu dikaburkan.
+
+    Gunanya mengisi sisi yang kosong saat GIF diputar lebih kecil dari layar.
+    Ini **tidak** menambah beban pemutaran: latarnya digambar sekali di awal,
+    lalu tiap bingkai cuma menimpa area GIF di tengah — jadi fps-nya tetap
+    fps ukuran kecil, bukan fps layar penuh.
+
+    Membesarkan GIF-nya sendiri ke layar penuh tidak bisa jadi jalan pintas:
+    yang menentukan waktu kirim adalah jumlah piksel yang ditulis ke panel,
+    bukan resolusi sumbernya.
+    """
+    from PIL import ImageEnhance, ImageFilter
+
+    besar = pas_ke(bingkai, (kanvas, kanvas)).filter(ImageFilter.GaussianBlur(kabur))
+    if terang == 1.0:
+        return besar
+    # Penggelapan sengaja tidak dipakai secara baku. Untuk GIF berlatar terang
+    # hasilnya justru buruk: latar putih jadi bingkai abu-abu datar dan
+    # sambungannya malah kelihatan. Tanpa digelapkan, latar sewarna menyambung
+    # nyaris tanpa batas.
+    return ImageEnhance.Brightness(besar).enhance(terang)
+
+
 def potong_perubahan(
     sebelum: Image.Image, sesudah: Image.Image, x0: int, y0: int
 ) -> tuple[Image.Image, int, int]:
