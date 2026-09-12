@@ -83,7 +83,7 @@ oke "$SERVICE aktif & enabled"
 
 # ---------------------------------------------------------------- 6. desktop
 info "Pasang peluncur aplikasi"
-chmod +x "$DIR_APP/tema-lcd.py"
+chmod +x "$DIR_APP/tema-lcd.py" "$DIR_APP/gif_pemutar.py"
 mkdir -p "$HOME/.local/share/applications"
 sed "s|@DIR_APP@|$DIR_APP|g" \
   "$DIR_APP/desktop/aio-lcd-tema.desktop.in" > "$HOME/.local/share/applications/aio-lcd-tema.desktop"

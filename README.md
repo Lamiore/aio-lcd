@@ -170,9 +170,40 @@ Selama GIF diputar, `main.py` yang menggambar statistik harus mati — jadi GIF
 dan angka suhu tidak bisa tampil bersamaan kecuali satu program menggambar
 dua-duanya sendiri.
 
-Pemutar GIF-nya **belum ada di repo ini** — masih dalam pengerjaan, dengan
-bentuk "mode GIF terpisah": monitor berhenti, GIF jalan, lalu monitor menyala
-lagi.
+### Cara memutarnya
+
+Lewat aplikasi: tombol `+` › **Putar GIF…**. Setelah memilih berkas, kamu
+memilih ukuran tayang, dan dialognya menyebut berapa fps yang diminta GIF-nya
+dan berapa yang sanggup dikirim panel — jadi kamu tahu hasilnya bakal mulus
+atau tersendat **sebelum** memutar.
+
+Lewat baris perintah:
+
+```bash
+systemctl --user stop aio-lcd
+<upstream>/.venv/bin/python gif_pemutar.py --gif anu.gif --ukuran 240
+```
+
+Pemutarnya **wajib** memakai Python venv upstream — pyserial dan pustaka
+panelnya cuma ada di sana, tidak di Python sistem.
+
+Diukur di perangkat dengan GIF 24 bingkai: **15,6 fps** di 240×240 dan
+**3,0 fps** di layar penuh — cocok dengan tabel di atas. Perkiraan yang
+ditampilkan aplikasi sengaja dibuat lebih rendah dari kenyataan supaya tidak
+pernah menjanjikan lebih dari yang bisa ditepati.
+
+Aplikasi menjalankannya sebagai unit sementara (`systemd-run --user`), bukan
+subprocess biasa, supaya statusnya tetap terbaca `systemctl` walau aplikasinya
+ditutup. `ExecStopPost` pada unit itu menyalakan kembali service monitor —
+bukan sekadar bergantung pada blok `finally` pemutar, karena pustaka upstream
+memanggil `os._exit(0)` kalau panel gagal dibuka, dan itu **melewati**
+`finally`.
+
+Kalau suatu saat GIF berhenti tapi statistiknya tidak kembali:
+
+```bash
+systemctl --user start aio-lcd
+```
 
 ---
 
@@ -229,10 +260,12 @@ dengan tangan.
 
 | | |
 |---|---|
-| `tema-lcd.py` | aplikasi GTK4: pilih, bikin, impor, duplikat, hapus tema |
+| `tema-lcd.py` | aplikasi GTK4: pilih, bikin, impor, duplikat, hapus tema; putar GIF |
 | `lcd_konfig.py` | baca/tulis `config.yaml`, pendataan tema, kendali service |
 | `lcd_tema.py` | pembuatan tema, impor, symlink, penghapusan |
-| `uji_lcd_konfig.py`, `uji_lcd_tema.py` | 51 uji — `python3 uji_lcd_konfig.py && python3 uji_lcd_tema.py` |
+| `lcd_gif.py` | pembacaan bingkai GIF, perkiraan fps |
+| `gif_pemutar.py` | pemutar GIF — jalan dengan venv upstream |
+| `uji_*.py` | 70 uji — `for f in uji_*.py; do python3 $f; done` |
 | `pasang.sh` | pemasang, aman dijalankan berulang |
 | `config/config.yaml` | konfigurasi upstream yang sudah disetel |
 | `udev/` | aturan izin port serial |

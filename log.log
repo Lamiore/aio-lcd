@@ -1,0 +1,65 @@
+09/12/2026 04:16:08 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 04:16:09 PM [DEBUG] Detected screen turned ON
+09/12/2026 04:16:09 PM [DEBUG] HW revision: C
+09/12/2026 04:16:09 PM [DEBUG] Static COM port: /dev/ttyACM0
+09/12/2026 04:16:09 PM [INFO] Display reset (COM port may change)...
+09/12/2026 04:16:25 PM [DEBUG] Static COM port: /dev/ttyACM0
+09/12/2026 04:16:25 PM [WARNING] Cannot open COM port /dev/ttyACM0: [Errno 2] could not open port /dev/ttyACM0: [Errno 2] No such file or directory: '/dev/ttyACM0' - retrying (1/10)
+09/12/2026 04:16:26 PM [DEBUG] Static COM port: /dev/ttyACM0
+09/12/2026 04:16:26 PM [WARNING] Cannot open COM port /dev/ttyACM0: [Errno 2] could not open port /dev/ttyACM0: [Errno 2] No such file or directory: '/dev/ttyACM0' - retrying (2/10)
+09/12/2026 04:16:27 PM [DEBUG] Static COM port: /dev/ttyACM0
+09/12/2026 04:16:27 PM [WARNING] Cannot open COM port /dev/ttyACM0: [Errno 2] could not open port /dev/ttyACM0: [Errno 2] No such file or directory: '/dev/ttyACM0' - retrying (3/10)
+09/12/2026 04:16:28 PM [DEBUG] Static COM port: /dev/ttyACM0
+09/12/2026 04:16:28 PM [WARNING] Cannot open COM port /dev/ttyACM0: [Errno 2] could not open port /dev/ttyACM0: [Errno 2] No such file or directory: '/dev/ttyACM0' - retrying (4/10)
+09/12/2026 04:16:29 PM [DEBUG] Static COM port: /dev/ttyACM0
+09/12/2026 04:16:29 PM [WARNING] Cannot open COM port /dev/ttyACM0: [Errno 2] could not open port /dev/ttyACM0: [Errno 2] No such file or directory: '/dev/ttyACM0' - retrying (5/10)
+09/12/2026 04:16:30 PM [DEBUG] Static COM port: /dev/ttyACM0
+09/12/2026 04:16:30 PM [WARNING] Cannot open COM port /dev/ttyACM0: [Errno 2] could not open port /dev/ttyACM0: [Errno 2] No such file or directory: '/dev/ttyACM0' - retrying (6/10)
+09/12/2026 04:16:31 PM [DEBUG] Static COM port: /dev/ttyACM0
+09/12/2026 04:16:31 PM [WARNING] Cannot open COM port /dev/ttyACM0: [Errno 2] could not open port /dev/ttyACM0: [Errno 2] No such file or directory: '/dev/ttyACM0' - retrying (7/10)
+09/12/2026 04:16:32 PM [DEBUG] Static COM port: /dev/ttyACM0
+09/12/2026 04:16:32 PM [WARNING] Cannot open COM port /dev/ttyACM0: [Errno 2] could not open port /dev/ttyACM0: [Errno 2] No such file or directory: '/dev/ttyACM0' - retrying (8/10)
+09/12/2026 04:16:33 PM [DEBUG] Static COM port: /dev/ttyACM0
+09/12/2026 04:16:33 PM [WARNING] Cannot open COM port /dev/ttyACM0: [Errno 2] could not open port /dev/ttyACM0: [Errno 2] No such file or directory: '/dev/ttyACM0' - retrying (9/10)
+09/12/2026 04:16:34 PM [DEBUG] Static COM port: /dev/ttyACM0
+09/12/2026 04:16:34 PM [WARNING] Cannot open COM port /dev/ttyACM0: [Errno 2] could not open port /dev/ttyACM0: [Errno 2] No such file or directory: '/dev/ttyACM0' - retrying (10/10)
+09/12/2026 04:16:35 PM [ERROR] Cannot open COM port after 10 attempts. If the screen is connected, run Configuration again and select the COM port manually
+09/12/2026 04:20:05 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 04:20:16 PM [DEBUG] Detected screen turned ON
+09/12/2026 04:20:16 PM [DEBUG] HW revision: C
+09/12/2026 04:20:16 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 04:20:17 PM [DEBUG] Detected screen turned ON
+09/12/2026 04:20:17 PM [DEBUG] Auto detected COM port: /dev/ttyACM0
+09/12/2026 04:20:17 PM [INFO] Display reset (COM port may change)...
+09/12/2026 04:20:27 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 04:20:28 PM [DEBUG] Detected screen turned ON
+09/12/2026 04:20:28 PM [DEBUG] Auto detected COM port: /dev/ttyACM0
+09/12/2026 04:20:29 PM [DEBUG] Display ID returned: chs_5inch.dev1_rom1.89
+09/12/2026 04:20:29 PM [DEBUG] HW sub-revision detected: SubRevision.REV_2INCH, ROM version: 89
+09/12/2026 04:21:17 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 04:21:18 PM [DEBUG] Detected screen turned ON
+09/12/2026 04:21:18 PM [DEBUG] HW revision: C
+09/12/2026 04:21:18 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 04:21:19 PM [DEBUG] Detected screen turned ON
+09/12/2026 04:21:19 PM [WARNING] Cannot find COM port automatically, retrying (1/10)
+09/12/2026 04:21:20 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 04:21:34 PM [DEBUG] Detected screen turned ON
+09/12/2026 04:21:34 PM [DEBUG] Auto detected COM port: /dev/ttyACM0
+09/12/2026 04:21:34 PM [INFO] Display reset (COM port may change)...
+09/12/2026 04:21:44 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 04:21:45 PM [DEBUG] Detected screen turned ON
+09/12/2026 04:21:45 PM [DEBUG] Auto detected COM port: /dev/ttyACM0
+09/12/2026 04:21:45 PM [DEBUG] Display ID returned: chs_5inch.dev1_rom1.89
+09/12/2026 04:21:45 PM [DEBUG] HW sub-revision detected: SubRevision.REV_2INCH, ROM version: 89
+09/12/2026 04:21:51 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 04:21:52 PM [DEBUG] Detected screen turned ON
+09/12/2026 04:21:52 PM [DEBUG] HW revision: C
+09/12/2026 04:21:52 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 04:21:53 PM [DEBUG] Detected screen turned ON
+09/12/2026 04:21:53 PM [DEBUG] Auto detected COM port: /dev/ttyACM0
+09/12/2026 04:21:53 PM [INFO] Display reset (COM port may change)...
+09/12/2026 04:22:03 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 04:22:04 PM [DEBUG] Detected screen turned ON
+09/12/2026 04:22:04 PM [DEBUG] Auto detected COM port: /dev/ttyACM0
+09/12/2026 04:22:04 PM [DEBUG] Display ID returned: chs_5inch.dev1_rom1.89
+09/12/2026 04:22:04 PM [DEBUG] HW sub-revision detected: SubRevision.REV_2INCH, ROM version: 89

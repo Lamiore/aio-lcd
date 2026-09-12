@@ -250,21 +250,26 @@ class PustakaTema:
         )
 
 
-def muat_dan_pas(gambar: Path, ukuran: tuple[int, int]) -> Image.Image:
-    """Muat gambar lalu potong-tengah supaya persis mengisi kanvas.
+def pas_ke(im: Image.Image, ukuran: tuple[int, int]) -> Image.Image:
+    """Potong-tengah sebuah gambar supaya persis mengisi kanvas.
 
     Dipilih 'isi lalu potong', bukan 'muat seluruhnya', karena layar ini bujur
     sangkar dan gambar yang dimuat utuh akan menyisakan pita hitam di dua sisi.
     """
+    im = im.convert("RGB")
+    lebar_t, tinggi_t = ukuran
+    skala = max(lebar_t / im.width, tinggi_t / im.height)
+    baru = (max(1, round(im.width * skala)), max(1, round(im.height * skala)))
+    im = im.resize(baru, Image.LANCZOS)
+    kiri = (im.width - lebar_t) // 2
+    atas = (im.height - tinggi_t) // 2
+    return im.crop((kiri, atas, kiri + lebar_t, atas + tinggi_t))
+
+
+def muat_dan_pas(gambar: Path, ukuran: tuple[int, int]) -> Image.Image:
+    """Muat gambar dari berkas lalu paskan ke kanvas."""
     with Image.open(gambar) as im:
-        im = im.convert("RGB")
-        lebar_t, tinggi_t = ukuran
-        skala = max(lebar_t / im.width, tinggi_t / im.height)
-        baru = (max(1, round(im.width * skala)), max(1, round(im.height * skala)))
-        im = im.resize(baru, Image.LANCZOS)
-        kiri = (im.width - lebar_t) // 2
-        atas = (im.height - tinggi_t) // 2
-        return im.crop((kiri, atas, kiri + lebar_t, atas + tinggi_t))
+        return pas_ke(im, ukuran)
 
 
 def ukuran_tema(dir_tema: Path) -> str:

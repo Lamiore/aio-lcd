@@ -17,6 +17,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import lcd_gif as lg  # noqa: E402
 import lcd_konfig as lk  # noqa: E402
 import lcd_tema as lt  # noqa: E402
 
@@ -86,6 +87,7 @@ class Jendela(Adw.ApplicationWindow):
 
         self.konfig = lk.Konfig()
         self.sedang_terapkan = False
+        self.gif_berjalan = False
         try:
             self.tema_terpasang = self.konfig.tema
             self.terbalik_terpasang = self.konfig.terbalik
@@ -128,6 +130,9 @@ class Jendela(Adw.ApplicationWindow):
         bagian_impor.append("Impor dari folder…", "win.impor-folder")
         bagian_impor.append("Impor dari zip…", "win.impor-zip")
         menu.append_section(None, bagian_impor)
+        bagian_gif = Gio.Menu()
+        bagian_gif.append("Putar GIF…", "win.putar-gif")
+        menu.append_section(None, bagian_gif)
         bagian_hapus = Gio.Menu()
         bagian_hapus.append("Hapus tema terpilih…", "win.hapus")
         menu.append_section(None, bagian_hapus)
@@ -155,6 +160,7 @@ class Jendela(Adw.ApplicationWindow):
 
         self.spanduk = Adw.Banner()
         self.spanduk.set_revealed(False)
+        self.spanduk.connect("button-clicked", self.on_hentikan_gif)
         isi.append(self.spanduk)
 
         grup_tampilan = Adw.PreferencesGroup(title="Tampilan")
@@ -191,6 +197,7 @@ class Jendela(Adw.ApplicationWindow):
 
         self._muat_tema()
         self._segarkan_status()
+        GLib.timeout_add_seconds(3, self._pantau_gif)
 
     # ------------------------------------------------------------- pemuatan
 
@@ -236,17 +243,33 @@ class Jendela(Adw.ApplicationWindow):
     # -------------------------------------------------------------- keadaan
 
     def _segarkan_status(self):
-        if not lk.service_terpasang():
+        self.gif_berjalan = lk.gif_aktif()
+        if self.gif_berjalan:
+            self.spanduk.set_title("GIF sedang diputar — statistik berhenti sementara")
+            self.spanduk.set_button_label("Hentikan")
+            self.spanduk.set_revealed(True)
+        elif not lk.service_terpasang():
             self.spanduk.set_title(
                 f"{lk.NAMA_SERVICE} belum terpasang — perubahan disimpan, tapi layar tidak ikut berubah"
             )
+            self.spanduk.set_button_label(None)
             self.spanduk.set_revealed(True)
         elif not lk.service_aktif():
             self.spanduk.set_title(f"{lk.NAMA_SERVICE} sedang mati — Terapkan akan menyalakannya")
+            self.spanduk.set_button_label(None)
             self.spanduk.set_revealed(True)
         else:
             self.spanduk.set_revealed(False)
         self.judul.set_subtitle(f"tema aktif: {self.tema_terpasang or '—'}")
+        self._segarkan_tombol()
+
+    def _pantau_gif(self):
+        """Periksa berkala: pemutar bisa berhenti sendiri (GIF rusak, panel
+        tidak terdeteksi), dan spanduknya harus ikut hilang tanpa perlu
+        aplikasinya dibuka ulang."""
+        if lk.gif_aktif() != self.gif_berjalan:
+            self._segarkan_status()
+        return True  # terus berjalan
 
     def _ada_perubahan(self) -> bool:
         return (
@@ -255,7 +278,9 @@ class Jendela(Adw.ApplicationWindow):
         )
 
     def _segarkan_tombol(self):
-        self.tombol_terap.set_sensitive(not self.sedang_terapkan and self._ada_perubahan())
+        self.tombol_terap.set_sensitive(
+            not self.sedang_terapkan and not self.gif_berjalan and self._ada_perubahan()
+        )
         self._segarkan_aksi()
 
     def on_pilih(self, petak):
@@ -278,6 +303,7 @@ class Jendela(Adw.ApplicationWindow):
             ("impor-folder", self.on_impor_folder),
             ("impor-zip", self.on_impor_zip),
             ("hapus", self.on_hapus),
+            ("putar-gif", self.on_putar_gif),
         ):
             a = Gio.SimpleAction.new(nama, None)
             a.connect("activate", fungsi)
@@ -286,12 +312,15 @@ class Jendela(Adw.ApplicationWindow):
 
     def _segarkan_aksi(self):
         kartu = self._kartu_terpilih()
-        bebas = not self.sedang_terapkan
+        # Selama GIF diputar, monitor sengaja mati dan port serialnya dipegang
+        # pemutar — mengubah tema saat itu tidak akan kelihatan.
+        bebas = not self.sedang_terapkan and not self.gif_berjalan
         ada = kartu is not None
         self.aksi["bikin"].set_enabled(bebas and ada)
         self.aksi["duplikat"].set_enabled(bebas and ada)
         self.aksi["impor-folder"].set_enabled(bebas)
         self.aksi["impor-zip"].set_enabled(bebas)
+        self.aksi["putar-gif"].set_enabled(bebas)
         # Tema bawaan upstream tidak dihapus dari sini, dan tema yang sedang
         # dipakai layar juga tidak — menghapusnya bikin service gagal memuat.
         self.aksi["hapus"].set_enabled(
@@ -436,6 +465,89 @@ class Jendela(Adw.ApplicationWindow):
 
         dialog.connect("response", jawab)
         dialog.present(self)
+
+    # ---------------------------------------------------------------- GIF
+
+    def on_putar_gif(self, *_):
+        dialog = Gtk.FileDialog(title="Pilih GIF untuk diputar")
+        saring, daftar = self._saringan("GIF", "image/gif")
+        dialog.set_filters(daftar)
+        dialog.set_default_filter(saring)
+
+        def selesai(d, hasil):
+            try:
+                berkas = d.open_finish(hasil)
+            except GLib.Error:
+                return
+            self._dialog_gif(Path(berkas.get_path()))
+
+        dialog.open(self, None, selesai)
+
+    def _dialog_gif(self, jalur: Path):
+        ukuran = list(lg.UKURAN_PILIHAN)
+        label = [f"{u}×{u}" + (" — layar penuh" if u == lg.KANVAS_BAKU else "") for u in ukuran]
+        pilihan = Adw.ComboRow(title="Ukuran tayang", model=Gtk.StringList.new(label))
+        pilihan.set_selected(ukuran.index(240) if 240 in ukuran else 0)
+
+        keterangan = Gtk.Label(xalign=0)
+        keterangan.set_wrap(True)
+        keterangan.add_css_class("dim-label")
+        keterangan.set_margin_top(8)
+
+        grup = Adw.PreferencesGroup()
+        grup.add(pilihan)
+        kotak = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        kotak.set_size_request(360, -1)
+        kotak.append(grup)
+        kotak.append(keterangan)
+
+        def segarkan(*_):
+            u = ukuran[pilihan.get_selected()]
+            try:
+                r = lg.ringkasan(jalur, u)
+            except (OSError, ValueError) as galat:
+                keterangan.set_text(f"Tidak bisa membaca GIF: {galat}")
+                return
+            garis = (f"{r['jumlah_bingkai']} bingkai · GIF minta "
+                     f"{r['fps_diminta']:.1f} fps · panel sanggup ~{r['fps_sanggup']:.1f} fps")
+            if not r["mulus"]:
+                garis += ("\nAkan diputar lebih lambat dari aslinya. Pilih ukuran "
+                          "lebih kecil kalau mau mulus — fps naik sebanding luas area.")
+            keterangan.set_text(garis)
+
+        pilihan.connect("notify::selected", segarkan)
+        segarkan()
+
+        dialog = Adw.AlertDialog(
+            heading=f"Putar {jalur.name}",
+            body="Statistik berhenti selama GIF diputar — cuma satu program "
+                 "yang boleh memakai layarnya.",
+        )
+        dialog.set_extra_child(kotak)
+        dialog.add_response("batal", "Batal")
+        dialog.add_response("putar", "Putar")
+        dialog.set_response_appearance("putar", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("putar")
+        dialog.set_close_response("batal")
+
+        def jawab(_d, resp):
+            if resp != "putar":
+                return
+            berhasil, pesan = lk.mulai_gif(jalur, ukuran[pilihan.get_selected()])
+            self._toast(pesan)
+            if berhasil:
+                # Pemutar butuh beberapa detik membangunkan panel; pantau
+                # berkala yang akan memunculkan spanduknya.
+                GLib.timeout_add_seconds(2, lambda: (self._segarkan_status(), False)[1])
+
+        dialog.connect("response", jawab)
+        dialog.present(self)
+
+    def on_hentikan_gif(self, *_):
+        berhasil, pesan = lk.hentikan_gif()
+        self._toast(pesan)
+        if berhasil:
+            self._segarkan_status()
 
     # ----------------------------------------------------------- penerapan
 

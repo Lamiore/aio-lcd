@@ -29,6 +29,12 @@ DIR_UPSTREAM = Path(
 
 NAMA_SERVICE = os.environ.get("AIO_LCD_SERVICE", "aio-lcd.service")
 
+# Pemutar GIF jalan sebagai unit sementara (systemd-run), bukan unit terpasang:
+# argumennya berubah tiap kali diputar, dan statusnya tetap bisa dibaca
+# systemctl — beda dengan subprocess biasa yang hilang jejak begitu aplikasinya
+# ditutup.
+NAMA_SERVICE_GIF = os.environ.get("AIO_LCD_SERVICE_GIF", "aio-lcd-gif.service")
+
 # Penanda di log yang berarti layar sudah benar-benar digambar ulang, bukan
 # sekadar prosesnya hidup. systemd melaporkan "active" jauh sebelum ini.
 PENANDA_SIAP = "Starting system monitoring"
@@ -211,6 +217,50 @@ def service_aktif() -> bool:
 
 def _invocation_id() -> str:
     return _systemctl("show", NAMA_SERVICE, "-p", "InvocationID", "--value").stdout.strip()
+
+
+def gif_aktif() -> bool:
+    return _systemctl("is-active", NAMA_SERVICE_GIF).stdout.strip() == "active"
+
+
+def mulai_gif(jalur_gif, ukuran: int, kecerahan: int = 20) -> tuple[bool, str]:
+    """Putar GIF sebagai unit sementara.
+
+    `ExecStopPost` sengaja dipasang di unitnya, bukan cuma diandalkan pada blok
+    `finally` pemutar: kalau panel gagal dibuka, pustaka upstream memanggil
+    `os._exit(0)` yang melewati `finally`, dan service monitor tidak akan
+    pernah dinyalakan kembali. Unit yang mengurusnya menutup celah itu.
+    """
+    if gif_aktif():
+        return False, "GIF sedang diputar"
+    python_venv = DIR_UPSTREAM / ".venv/bin/python"
+    if not python_venv.is_file():
+        return False, f"venv upstream tidak ada di {python_venv}"
+    pemutar = Path(__file__).resolve().parent / "gif_pemutar.py"
+
+    hasil = subprocess.run(
+        [
+            "systemd-run", "--user", f"--unit={NAMA_SERVICE_GIF}", "--collect",
+            f"--description=Pemutar GIF layar LCD AIO",
+            f"--property=ExecStopPost=/usr/bin/systemctl --user start {NAMA_SERVICE}",
+            str(python_venv), str(pemutar),
+            "--gif", str(jalur_gif),
+            "--ukuran", str(ukuran),
+            "--kecerahan", str(kecerahan),
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    if hasil.returncode != 0:
+        return False, (hasil.stderr or hasil.stdout).strip() or "gagal menjalankan pemutar"
+    return True, "GIF mulai diputar"
+
+
+def hentikan_gif() -> tuple[bool, str]:
+    """Hentikan pemutar; monitor dinyalakan lagi oleh pemutar dan ExecStopPost."""
+    hasil = _systemctl("stop", NAMA_SERVICE_GIF)
+    if hasil.returncode != 0:
+        return False, (hasil.stderr or hasil.stdout).strip() or "gagal menghentikan"
+    return True, "GIF dihentikan"
 
 
 def restart_service(batas_detik: float = 90.0) -> tuple[bool, str]:
