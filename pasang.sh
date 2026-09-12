@@ -85,8 +85,13 @@ oke "$SERVICE aktif & enabled"
 info "Pasang peluncur aplikasi"
 chmod +x "$DIR_APP/tema-lcd.py" "$DIR_APP/gif_pemutar.py"
 mkdir -p "$HOME/.local/share/applications"
+# Nama berkasnya harus sama persis dengan application_id di tema-lcd.py:
+# begitu caranya GNOME mencocokkan jendela yang berjalan dengan peluncurnya.
+# Kalau beda, ikonnya dobel di dash dan "Pin to Dash" tidak menempel.
+DESKTOP_ID=io.github.lamiore.AioLcdTema.desktop
+rm -f "$HOME/.local/share/applications/aio-lcd-tema.desktop"   # nama lama
 sed "s|@DIR_APP@|$DIR_APP|g" \
-  "$DIR_APP/desktop/aio-lcd-tema.desktop.in" > "$HOME/.local/share/applications/aio-lcd-tema.desktop"
+  "$DIR_APP/desktop/$DESKTOP_ID.in" > "$HOME/.local/share/applications/$DESKTOP_ID"
 update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
 oke "\"Tema LCD AIO\" muncul di daftar aplikasi"
 
