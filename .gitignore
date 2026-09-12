@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+
+# Upstream memasang RotatingFileHandler("log.log") dengan jalur relatif
+# (library/log.py:32), jadi berkasnya mendarat di direktori kerja proses —
+# termasuk direktori ini kalau ada skrip yang dijalankan dari sini. Isinya log
+# runtime, bukan bagian repo.
+*.log
