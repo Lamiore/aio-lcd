@@ -1,73 +1,145 @@
-# aio-lcd
+# LCD pendingin AIO ID-Cooling di Linux — driver, autostart, dan pengelola tema
 
-Bikin layar LCD pendingin **ID-Cooling SL360 PRO SE** jalan di Linux, plus
-aplikasi kecil buat ganti-ganti temanya.
+Pendingin AIO **ID-COOLING SL360 PRO SE** punya layar LCD 2,1 inci, tapi aplikasi
+resminya (**ID-COOLING Space Control**) cuma jalan di Windows. Repo ini bikin
+layar itu hidup di Linux: menampilkan CPU/GPU/RAM/suhu, nyala sendiri saat login,
+dan punya aplikasi GTK untuk ganti tema, bikin tema dari gambar sendiri, dan
+impor tema orang lain.
 
-App resmi bawaan pendinginnya (**Space Control**) cuma ada di Windows. Tapi
-layarnya sendiri bukan bikinan ID-Cooling — itu panel **Turing Smart Screen
-2.1"** yang di-rebrand, dan panel itu punya dukungan sumber terbuka lewat
-[turing-smart-screen-python](https://github.com/mathoudebine/turing-smart-screen-python).
+> **Kuncinya: layar itu bukan buatan ID-Cooling.** Itu panel **Turing Smart
+> Screen 2,1"** yang di-rebrand, dan panel itu sudah didukung proyek sumber
+> terbuka [turing-smart-screen-python][upstream]. Begitu tahu itu, sisanya cuma
+> soal menyambungkan. Kalau kamu sampai di sini lewat pencarian "ID-Cooling LCD
+> Linux" — mulai dari bagian [Apakah punyamu sama?](#apakah-punyamu-sama).
 
-Repo ini **bukan** salinan proyek itu. Isinya cuma perekat yang bikin dia jalan
-di mesin ini: konfigurasi, izin perangkat, autostart, dan pemilih temanya.
+Repo ini **bukan** salinan proyek itu. Isinya perekat di sekelilingnya:
+konfigurasi, izin perangkat, autostart, dan aplikasi temanya.
 
-## Panelnya ngaku apa
+![status](https://img.shields.io/badge/diuji-Fedora%2044%20·%20GNOME%2050%20Wayland-blue)
 
-Diperiksa lewat USB, bukan ditebak dari nama produk:
+---
 
-| keadaan | id | serial |
+## Apakah punyamu sama?
+
+Colok layarnya, lalu:
+
+```bash
+lsusb | grep -i -E "1a86:ca21|UsbMonitor"
+```
+
+Kalau muncul `1a86:ca21 QinHeng Electronics UsbMonitor`, kemungkinan besar iya.
+Pastikan lagi:
+
+```bash
+for d in /sys/bus/usb/devices/*/; do
+  [ "$(cat $d/idVendor 2>/dev/null)" = "1a86" ] && cat $d/manufacturer $d/product $d/serial 2>/dev/null
+done
+```
+
+Yang dicari: `Turing` / `UsbMonitor` / `CT21INCH`.
+
+Panel ini berganti identitas USB saat dibangunkan — penting untuk izin
+perangkat nanti:
+
+| keadaan | VID:PID | serial |
 |---|---|---|
 | tidur | `1a86:ca21` | `CT21INCH` |
 | bangun | `1d6b:0121` | `20080411` |
 
-Firmware melapor `chs_5inch.dev1_rom1.89`, sub-revisi `REV_2INCH`. Di
-`config.yaml` ini berarti `REVISION: C`.
+Firmware melapor `chs_5inch.dev1_rom1.89`, sub-revisi `REV_2INCH`. Di upstream
+ini berarti **`REVISION: C`**.
 
-Yang bikin yakin bukan tebakan: `CT21INCH` dan `1a86:ca21` **tertulis harfiah**
-di `library/lcd/lcd_comm_rev_c.py:142-158` milik upstream.
+Bukan tebakan dari nama produk: `CT21INCH` dan `1a86:ca21` tertulis harfiah di
+[`library/lcd/lcd_comm_rev_c.py`][revc] baris 142–158 milik upstream.
+
+**Kalau angkamu beda,** repo ini tetap berguna sebagai contoh — tapi cek dulu
+[daftar revisi hardware][revisi] upstream, lalu ganti `REVISION:` di
+`config/config.yaml` sesuai model layarmu. Panel 2,8"/5"/8,8" juga rev C.
+
+---
 
 ## Pasang
 
+Butuh: Python 3.9+, `git`, dan akses `sudo` sekali (untuk aturan udev).
+
 ```bash
-git clone <repo-ini> ~/workspace/projects/aio-lcd
+git clone https://github.com/Lamiore/aio-lcd.git ~/workspace/projects/aio-lcd
 cd ~/workspace/projects/aio-lcd
 ./pasang.sh
 ```
 
-Skripnya aman dijalankan berulang — langkah yang sudah beres dilewati. Yang
-butuh `sudo` cuma satu: menulis udev rule.
+Skripnya aman dijalankan berulang — langkah yang sudah beres dilewati, bukan
+diulang. Yang dikerjakan:
 
-Kalau klon upstream mau ditaruh di tempat lain, setel `AIO_LCD_UPSTREAM`.
+1. klon [turing-smart-screen-python][upstream] (`--depth 1`)
+2. bikin venv + pasang dependensinya
+3. salin `config.yaml` yang sudah disetel
+4. pasang ulang tema buatan sendiri (kalau ada dari pemasangan sebelumnya)
+5. pasang aturan udev — **satu-satunya langkah yang minta `sudo`**
+6. pasang & nyalakan service autostart
+7. pasang peluncur aplikasi
+
+Klon upstream mau ditaruh di tempat lain? Setel `AIO_LCD_UPSTREAM`.
+
+Bukti berhasil bukan dari status systemd, tapi dari log ini:
+
+```bash
+journalctl --user -u aio-lcd -f | grep "Starting system monitoring"
+```
+
+---
 
 ## Aplikasi tema
 
 ```bash
-./tema-lcd.py
+./tema-lcd.py          # atau: cari "Tema LCD AIO" di daftar aplikasi
 ```
 
-Atau lewat daftar aplikasi GNOME: **Tema LCD AIO**.
+GTK4 + libadwaita, jalan dengan **Python sistem** (bukan venv upstream), karena
+`gi` cuma ada di sana. Yang bisa dilakukan:
 
-GTK4 + libadwaita, jalan dengan **Python sistem** (bukan venv upstream) karena
-`gi` cuma ada di sana. Isinya: petak preview tema, sakelar balik 180°, dan
-tombol Terapkan yang menulis config lalu me-restart service.
+- **Ganti tema** — petak pratinjau, klik, Terapkan.
+- **Balik 180°** — kalau blok pompanya terpasang terbalik seperti punya saya.
+- **Bikin tema dari gambar sendiri** — pilih foto apa pun, dipotong-tengah ke
+  ukuran kanvas, jadi latar tema baru.
+- **Impor tema** dari folder atau `.zip`.
+- **Duplikat** tema yang ada untuk diutak-atik tanpa merusak aslinya.
+- **Hapus** — hanya tema buatan sendiri; tema bawaan dan tema yang sedang
+  dipakai layar ditolak.
 
-Defaultnya cuma menampilkan tema yang ukurannya `2.1"` — dari 79 tema bawaan
-upstream, cuma 5 yang pas. Tema ukuran lain tetap mau dimuat, tapi tata
-letaknya melenceng, bukan menolak jalan. Ada sakelar buat menampilkan semuanya.
+Defaultnya cuma menampilkan tema berukuran `2.1"`. Dari 79 tema bawaan upstream,
+cuma 5 yang pas; tema ukuran lain tetap mau dimuat tapi tata letaknya melenceng.
+Ada sakelar untuk menampilkan semuanya.
 
-`Terapkan` menunggu sampai log service memuat `Starting system monitoring`
-sebelum melapor berhasil. Ini disengaja: systemd bilang `active` dalam
-milidetik, sementara layarnya baru tergambar belasan detik kemudian setelah
-panel dibangunkan dan port serialnya pindah.
+### Tema buatan sendiri disimpan di luar klon upstream
+
+Di `~/.local/share/aio-lcd/themes/`, lalu di-symlink ke `res/themes/` milik
+upstream. Sebabnya `pasang.sh` bisa mengklon ulang upstream, dan apa pun yang
+ditaruh langsung di sana akan ikut lenyap. Upstream mendata tema dengan
+`is_dir()` dan memuatnya lewat jalur berkas — dua-duanya mengikuti symlink
+(diuji, bukan diandaikan).
+
+Efek sampingnya berguna: entri `res/themes/` yang berupa symlink **pasti** tema
+buatan sendiri, jadi tidak perlu penanda apa pun untuk tahu mana yang aman
+dihapus.
+
+### Tata letak tema baru dipinjam, bukan dibuat dari nol
+
+Saat bikin tema dari gambar, kamu memilih satu tema yang ada sebagai contoh
+tata letak; yang diganti cuma latarnya. Menaruh angka di koordinat yang pas itu
+pekerjaan penyunting visual tersendiri, dan meminjam tata letak yang sudah
+terbukti muat di layar ini jauh lebih murah — hasilnya dijamin tidak melenceng.
+Ukuran kanvasnya pun dibaca dari latar tema contoh, bukan dari tabel hafalan,
+jadi ukuran layar berapa pun ikut benar.
 
 ### Kenapa tidak pakai `configure.py` bawaan upstream
 
-Dia sebenarnya sudah punya pemilih tema lengkap dengan preview. Tapi tombol
-**Save and run**-nya memanggil `subprocess.Popen(main.py)` **tanpa mematikan
-instance yang sedang jalan** (`configure.py:616-630`). Dengan service systemd
-hidup, itu bikin dua proses berebut port serial.
+Upstream sebenarnya sudah punya pemilih tema lengkap dengan pratinjau. Tapi
+tombol **Save and run**-nya memanggil `subprocess.Popen(main.py)` **tanpa
+mematikan instance yang sedang jalan** (`configure.py:616-630`). Dengan service
+systemd hidup, itu bikin dua proses berebut port serial.
 
-Buat setelan lain dia tetap berguna — matikan dulu service-nya:
+Untuk setelan lain dia tetap berguna — matikan dulu service-nya:
 
 ```bash
 systemctl --user stop aio-lcd
@@ -76,61 +148,128 @@ systemctl --user stop aio-lcd
 systemctl --user start aio-lcd
 ```
 
+---
+
+## Soal GIF animasi
+
+Panel ini **bisa**, tapi ada batasnya, dan batasnya sudah diukur langsung di
+perangkat — bukan diperkirakan:
+
+| ukuran | fps | laju data |
+|---|---|---|
+| 480×480 (layar penuh) | **2,9** | 1,9 MB/dtk |
+| 240×240 | **15,2** | 2,5 MB/dtk |
+| 120×120 | **56,5** | 2,3 MB/dtk |
+
+Jalur datanya ~2–2,5 MB/detik dan fps turun sebanding luas area. Jadi GIF layar
+penuh itu salindia, bukan animasi; GIF 240×240 di tengah dapat 15 fps yang
+sudah terasa mulus.
+
+Ada satu kenyataan keras: **cuma satu proses yang boleh memegang port serial.**
+Selama GIF diputar, `main.py` yang menggambar statistik harus mati — jadi GIF
+dan angka suhu tidak bisa tampil bersamaan kecuali satu program menggambar
+dua-duanya sendiri.
+
+Pemutar GIF-nya **belum ada di repo ini** — masih dalam pengerjaan, dengan
+bentuk "mode GIF terpisah": monitor berhenti, GIF jalan, lalu monitor menyala
+lagi.
+
+---
+
 ## Dua jebakan yang memakan waktu
 
-**1. Udev rule ber-`uaccess` wajib bernomor < 73.** Tag `uaccess` dikonsumsi
-`/usr/lib/udev/rules.d/73-seat-late.rules`, jadi rule bernomor `99-` memasang
-tagnya terlalu telat — ACL-nya tidak pernah terbentuk, **tanpa pesan galat apa
-pun**. Rule-nya kelihatan "kepakai" (GROUP berubah jadi `dialout`) tapi izinnya
-tetap ditolak. Semua rule uaccess bawaan systemd bernomor ≤ 71.
+Dua-duanya gagal **tanpa pesan galat**, jadi ditulis di sini supaya tidak ada
+yang mengulang.
+
+### 1. Aturan udev ber-`uaccess` wajib bernomor di bawah 73
+
+Tag `uaccess` dikonsumsi `/usr/lib/udev/rules.d/73-seat-late.rules`:
+
+```
+TAG=="uaccess", ENV{MAJOR}!="", RUN{builtin}+="uaccess"
+```
+
+Builtin itu hanya berjalan untuk tag yang sudah terpasang **sebelum** nomor 73.
+Aturan bernomor `99-` memasang tagnya terlalu telat — **ACL-nya tidak pernah
+terbentuk, dan tidak ada galat apa pun**. Aturannya kelihatan "kepakai" (GROUP
+berubah jadi `dialout`) tapi izinnya tetap ditolak. Semua aturan uaccess bawaan
+systemd bernomor ≤ 71.
 
 Memastikannya bukan dari `ls -l`, tapi dari ACL-nya:
 
 ```bash
-getfacl -p /dev/ttyACM1 | grep '^user:'   # harus ada user:<nama>:rw-
+getfacl -p /dev/ttyACM0 | grep '^user:'    # harus ada user:<nama>:rw-
 ```
 
+Tanda `+` di ujung mode (`crw-rw----+`) artinya ACL-nya ada.
+
 `uaccess` dipilih ketimbang `usermod -aG dialout` karena berlaku seketika lewat
-ACL sesi — grup baru perlu logout-login dulu.
+ACL sesi — grup baru butuh logout-login dulu.
 
-Rule di sini menutup **empat** id, bukan satu, karena panelnya ganti identitas
-saat dibangunkan. Menutup keadaan tidur saja bikin auto-deteksi putus di tengah.
+Aturan di repo ini menutup **empat** ID, bukan satu, karena panelnya berganti
+identitas saat dibangunkan. Menutup keadaan tidur saja bikin auto-deteksi putus
+di tengah jalan.
 
-**2. `COM_PORT` biarkan `AUTO`.** `/dev/ttyACM1` itu keadaan tidur dan bukan
-port yang dipakai bicara — saat bangun dia pindah ke `/dev/ttyACM0`.
-Mematoknya di config bikin gagal terus.
+### 2. `COM_PORT` biarkan `AUTO`
 
-Soal `THEME` yang nama temanya angka semua (26, 30, ...): nilainya harus berupa
+`/dev/ttyACM1` itu keadaan tidur dan **bukan** port yang dipakai bicara — saat
+bangun panelnya pindah ke `/dev/ttyACM0`. Mematoknya di config bikin gagal terus.
+
+### Catatan kecil: nama tema yang berupa angka
+
+Tema 2,1" bernama angka semua (26, 30, 43, 44, 45). Nilai `THEME` harus berupa
 string, karena YAML membaca `26` polos sebagai integer dan upstream gagal dengan
-`Theme not found or contains errors!`. `tema-lcd.py` selalu menulisnya berkutip,
-dan `configure.py` bawaan juga aman (ruamel mengutip sendiri). Yang berbahaya
-cuma menyuntingnya dengan tangan.
+`Theme not found or contains errors!`. Aplikasi di repo ini selalu menulisnya
+berkutip, dan `configure.py` bawaan juga aman. Yang berbahaya cuma menyuntingnya
+dengan tangan.
+
+---
 
 ## Isi repo
 
 | | |
 |---|---|
-| `tema-lcd.py` | aplikasi GTK4 pemilih tema |
-| `lcd_konfig.py` | logika: baca/tulis config, pendataan tema, kendali service |
-| `uji_lcd_konfig.py` | uji buat logika di atas — `python3 uji_lcd_konfig.py` |
-| `pasang.sh` | pemasang, aman diulang |
+| `tema-lcd.py` | aplikasi GTK4: pilih, bikin, impor, duplikat, hapus tema |
+| `lcd_konfig.py` | baca/tulis `config.yaml`, pendataan tema, kendali service |
+| `lcd_tema.py` | pembuatan tema, impor, symlink, penghapusan |
+| `uji_lcd_konfig.py`, `uji_lcd_tema.py` | 51 uji — `python3 uji_lcd_konfig.py && python3 uji_lcd_tema.py` |
+| `pasang.sh` | pemasang, aman dijalankan berulang |
 | `config/config.yaml` | konfigurasi upstream yang sudah disetel |
-| `udev/` | rule izin port serial |
-| `systemd/` | templat unit autostart |
-| `desktop/` | templat peluncur aplikasi |
+| `udev/` | aturan izin port serial |
+| `systemd/`, `desktop/` | templat unit autostart & peluncur |
 
-`lcd_konfig.py` sengaja tidak memakai ruamel.yaml walaupun upstream memakainya:
+`lcd_konfig.py` sengaja tidak memakai `ruamel.yaml` walaupun upstream memakainya:
 Python sistem tidak menyediakannya, dan penyuntingan baris bertarget menjaga
-komentar `config.yaml` utuh persis tanpa perlu dependensi tambahan.
+komentar `config.yaml` utuh persis tanpa dependensi tambahan.
+
+---
 
 ## Yang belum teruji
+
+Ditulis terbuka supaya tidak ada yang mengira ini sudah dicoba:
 
 - **Belum pernah lewat reboot sungguhan.** Rancangannya sudah menanganinya
   (`Restart=always` + `RestartSec=10` + `StartLimitIntervalSec=0`, jadi
   percobaan pertama yang kena izin-belum-siap tinggal diulang), tapi belum
   disaksikan.
 - **Suspend/resume belum diuji, dan ini yang paling mungkin patah.** Panelnya
-  ganti identitas USB tiap bangun. `Restart=always` cuma menolong kalau
-  prosesnya keluar; kalau `main.py` menggantung memegang fd basi, systemd tetap
-  melaporkan `active` padahal layarnya beku. Obatnya
+  berganti identitas USB tiap bangun. `Restart=always` hanya menolong kalau
+  prosesnya keluar; kalau `main.py` menggantung memegang deskriptor basi,
+  systemd tetap melaporkan `active` padahal layarnya beku. Obatnya
   `systemctl --user restart aio-lcd`.
+- Diuji cuma di **Fedora 44 / GNOME 50 / Wayland**, Python 3.14.
+
+Kalau kamu mencobanya di distro atau model pendingin lain, silakan buka issue —
+terutama kalau angka USB-nya berbeda.
+
+---
+
+## Terima kasih
+
+Pekerjaan beratnya milik [mathoudebine/turing-smart-screen-python][upstream] —
+protokol, driver, dan temanya dari sana. Repo ini cuma menyambungkannya ke satu
+pendingin dan satu desktop.
+
+[upstream]: https://github.com/mathoudebine/turing-smart-screen-python
+[revc]: https://github.com/mathoudebine/turing-smart-screen-python/blob/main/library/lcd/lcd_comm_rev_c.py
+[revisi]: https://github.com/mathoudebine/turing-smart-screen-python/wiki/Hardware-revisions

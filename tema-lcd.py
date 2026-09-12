@@ -14,10 +14,11 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lcd_konfig as lk  # noqa: E402
+import lcd_tema as lt  # noqa: E402
 
 # Ukuran layar yang dipakai menyaring tema. Panel AIO ini 2.1"; tema ukuran
 # lain tetap mau dimuat upstream, tapi tata letaknya melenceng — jadi
@@ -29,9 +30,10 @@ LEBAR_PREVIEW = 150
 class KartuTema(Gtk.FlowBoxChild):
     """Satu tema: gambar preview, namanya, penulisnya."""
 
-    def __init__(self, tema: lk.Tema):
+    def __init__(self, tema: lk.Tema, milik_pengguna: bool = False):
         super().__init__()
         self.tema = tema
+        self.milik_pengguna = milik_pengguna
         self.set_focusable(True)
 
         kotak = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -50,10 +52,20 @@ class KartuTema(Gtk.FlowBoxChild):
         gambar.add_css_class("card")
         kotak.append(gambar)
 
+        baris_judul = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        baris_judul.set_halign(Gtk.Align.CENTER)
         judul = Gtk.Label(label=tema.nama)
         judul.add_css_class("heading")
         judul.set_ellipsize(Pango.EllipsizeMode.END)
-        kotak.append(judul)
+        baris_judul.append(judul)
+        if milik_pengguna:
+            # Penanda ini yang membedakan tema yang boleh dihapus/disunting
+            # dari tema bawaan upstream.
+            tanda = Gtk.Image.new_from_icon_name("avatar-default-symbolic")
+            tanda.set_tooltip_text("Tema buatan sendiri")
+            tanda.add_css_class("dim-label")
+            baris_judul.append(tanda)
+        kotak.append(baris_judul)
 
         keterangan = tema.penulis or tema.ukuran
         if tema.penulis and tema.ukuran != UKURAN_LAYAR:
@@ -103,6 +115,27 @@ class Jendela(Adw.ApplicationWindow):
 
         self.putaran = Gtk.Spinner()
         self.header.pack_end(self.putaran)
+
+        self.pustaka = lt.PustakaTema()
+        self._siapkan_aksi()
+
+        menu = Gio.Menu()
+        bagian_buat = Gio.Menu()
+        bagian_buat.append("Bikin dari gambar…", "win.bikin")
+        bagian_buat.append("Duplikat tema terpilih…", "win.duplikat")
+        menu.append_section(None, bagian_buat)
+        bagian_impor = Gio.Menu()
+        bagian_impor.append("Impor dari folder…", "win.impor-folder")
+        bagian_impor.append("Impor dari zip…", "win.impor-zip")
+        menu.append_section(None, bagian_impor)
+        bagian_hapus = Gio.Menu()
+        bagian_hapus.append("Hapus tema terpilih…", "win.hapus")
+        menu.append_section(None, bagian_hapus)
+
+        self.tombol_tambah = Gtk.MenuButton(icon_name="list-add-symbolic", menu_model=menu)
+        self.tombol_tambah.set_tooltip_text("Tambah atau hapus tema")
+        self.header.pack_start(self.tombol_tambah)
+
         tampilan.add_top_bar(self.header)
 
         # --- isi
@@ -170,6 +203,7 @@ class Jendela(Adw.ApplicationWindow):
 
         ukuran = None if self.baris_semua.get_active() else UKURAN_LAYAR
         daftar = lk.daftar_tema(ukuran)
+        punya_sendiri = set(self.pustaka.daftar_pengguna())
 
         # Tema yang sedang terpasang harus selalu kelihatan, walaupun ukurannya
         # di luar saringan — kalau tidak, tampilannya seperti tak ada yang aktif.
@@ -183,10 +217,15 @@ class Jendela(Adw.ApplicationWindow):
             )
             return
 
-        self.grup_tema.set_description(f"{len(daftar)} tema tersedia")
+        jumlah_sendiri = sum(1 for t in daftar if t.nama in punya_sendiri)
+        keterangan = f"{len(daftar)} tema tersedia"
+        if jumlah_sendiri:
+            keterangan += f" · {jumlah_sendiri} buatan sendiri"
+        self.grup_tema.set_description(keterangan)
+
         terpilih = None
         for tema in daftar:
-            kartu = KartuTema(tema)
+            kartu = KartuTema(tema, milik_pengguna=tema.nama in punya_sendiri)
             self.petak.append(kartu)
             if tema.nama == self.tema_dipilih:
                 terpilih = kartu
@@ -217,12 +256,186 @@ class Jendela(Adw.ApplicationWindow):
 
     def _segarkan_tombol(self):
         self.tombol_terap.set_sensitive(not self.sedang_terapkan and self._ada_perubahan())
+        self._segarkan_aksi()
 
     def on_pilih(self, petak):
         anak = petak.get_selected_children()
         if anak:
             self.tema_dipilih = anak[0].tema.nama
             self._segarkan_tombol()
+
+    def _kartu_terpilih(self):
+        anak = self.petak.get_selected_children()
+        return anak[0] if anak else None
+
+    # ------------------------------------------------------ kelola pustaka
+
+    def _siapkan_aksi(self):
+        self.aksi = {}
+        for nama, fungsi in (
+            ("bikin", self.on_bikin),
+            ("duplikat", self.on_duplikat),
+            ("impor-folder", self.on_impor_folder),
+            ("impor-zip", self.on_impor_zip),
+            ("hapus", self.on_hapus),
+        ):
+            a = Gio.SimpleAction.new(nama, None)
+            a.connect("activate", fungsi)
+            self.add_action(a)
+            self.aksi[nama] = a
+
+    def _segarkan_aksi(self):
+        kartu = self._kartu_terpilih()
+        bebas = not self.sedang_terapkan
+        ada = kartu is not None
+        self.aksi["bikin"].set_enabled(bebas and ada)
+        self.aksi["duplikat"].set_enabled(bebas and ada)
+        self.aksi["impor-folder"].set_enabled(bebas)
+        self.aksi["impor-zip"].set_enabled(bebas)
+        # Tema bawaan upstream tidak dihapus dari sini, dan tema yang sedang
+        # dipakai layar juga tidak — menghapusnya bikin service gagal memuat.
+        self.aksi["hapus"].set_enabled(
+            bebas and ada and kartu.milik_pengguna and kartu.tema.nama != self.tema_terpasang
+        )
+
+    def _tanya_nama(self, judul, awalan, label_tombol, lanjut):
+        entri = Gtk.Entry(text=awalan, activates_default=True)
+        entri.set_margin_top(6)
+        dialog = Adw.AlertDialog(heading=judul, body="Nama ini dipakai sebagai nama folder tema.")
+        dialog.set_extra_child(entri)
+        dialog.add_response("batal", "Batal")
+        dialog.add_response("ok", label_tombol)
+        dialog.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("ok")
+        dialog.set_close_response("batal")
+        dialog.connect("response", lambda _d, resp: resp == "ok" and lanjut(entri.get_text().strip()))
+        dialog.present(self)
+
+    def _jalankan(self, kerja, nama_baru, pesan_sukses):
+        """Jalankan operasi pustaka, lalu muat ulang petak dan pilih hasilnya."""
+        try:
+            kerja()
+        except (lt.GalatTema, OSError) as galat:
+            self._toast(str(galat))
+            return
+        self.tema_dipilih = nama_baru
+        self._muat_tema()
+        self._toast(pesan_sukses)
+
+    def _saringan(self, nama, *mime):
+        saring = Gtk.FileFilter()
+        saring.set_name(nama)
+        for m in mime:
+            saring.add_mime_type(m)
+        daftar = Gio.ListStore.new(Gtk.FileFilter)
+        daftar.append(saring)
+        return saring, daftar
+
+    def on_bikin(self, *_):
+        kartu = self._kartu_terpilih()
+        if kartu is None:
+            return
+        donor = kartu.tema.nama
+        dialog = Gtk.FileDialog(title="Pilih gambar untuk jadi latar")
+        saring, daftar = self._saringan(
+            "Gambar", "image/png", "image/jpeg", "image/webp", "image/bmp", "image/gif"
+        )
+        dialog.set_filters(daftar)
+        dialog.set_default_filter(saring)
+
+        def selesai(d, hasil):
+            try:
+                berkas = d.open_finish(hasil)
+            except GLib.Error:
+                return  # dibatalkan
+            jalur = Path(berkas.get_path())
+            self._tanya_nama(
+                "Nama tema baru", jalur.stem[:40], "Buat",
+                lambda nama: self._jalankan(
+                    lambda: self.pustaka.buat_dari_gambar(jalur, nama, donor=donor),
+                    nama,
+                    f"Tema {nama} dibuat — tata letak dari {donor}",
+                ),
+            )
+
+        dialog.open(self, None, selesai)
+
+    def on_duplikat(self, *_):
+        kartu = self._kartu_terpilih()
+        if kartu is None:
+            return
+        sumber = kartu.tema.nama
+        self._tanya_nama(
+            f"Duplikat tema {sumber}", f"{sumber} salinan", "Duplikat",
+            lambda nama: self._jalankan(
+                lambda: self.pustaka.duplikat(sumber, nama), nama, f"Tema {nama} dibuat"
+            ),
+        )
+
+    def _impor(self, dialog, buka, judul_nama):
+        def selesai(d, hasil):
+            try:
+                berkas = buka(d, hasil)
+            except GLib.Error:
+                return
+            jalur = Path(berkas.get_path())
+            awalan = (jalur.stem if jalur.is_file() else jalur.name)[:40]
+            self._tanya_nama(
+                judul_nama, awalan, "Impor",
+                lambda nama: self._jalankan(
+                    lambda: self.pustaka.impor(jalur, nama_baru=nama), nama, f"Tema {nama} diimpor"
+                ),
+            )
+
+        return selesai
+
+    def on_impor_folder(self, *_):
+        dialog = Gtk.FileDialog(title="Pilih folder tema")
+        dialog.select_folder(
+            self, None,
+            self._impor(dialog, lambda d, h: d.select_folder_finish(h), "Nama tema hasil impor"),
+        )
+
+    def on_impor_zip(self, *_):
+        dialog = Gtk.FileDialog(title="Pilih berkas zip tema")
+        saring, daftar = self._saringan("Arsip zip", "application/zip")
+        dialog.set_filters(daftar)
+        dialog.set_default_filter(saring)
+        dialog.open(
+            self, None,
+            self._impor(dialog, lambda d, h: d.open_finish(h), "Nama tema hasil impor"),
+        )
+
+    def on_hapus(self, *_):
+        kartu = self._kartu_terpilih()
+        if kartu is None or not kartu.milik_pengguna:
+            return
+        nama = kartu.tema.nama
+        dialog = Adw.AlertDialog(
+            heading=f"Hapus tema {nama}?",
+            body="Folder temanya dihapus permanen. Tema bawaan tidak terpengaruh.",
+        )
+        dialog.add_response("batal", "Batal")
+        dialog.add_response("hapus", "Hapus")
+        dialog.set_response_appearance("hapus", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("batal")
+        dialog.set_close_response("batal")
+
+        def jawab(_d, resp):
+            if resp != "hapus":
+                return
+            try:
+                self.pustaka.hapus(nama)
+            except (lt.GalatTema, OSError) as galat:
+                self._toast(str(galat))
+                return
+            if self.tema_dipilih == nama:
+                self.tema_dipilih = self.tema_terpasang
+            self._muat_tema()
+            self._toast(f"Tema {nama} dihapus")
+
+        dialog.connect("response", jawab)
+        dialog.present(self)
 
     # ----------------------------------------------------------- penerapan
 
@@ -262,6 +475,7 @@ class Jendela(Adw.ApplicationWindow):
         self.petak.set_sensitive(not terkunci)
         self.baris_balik.set_sensitive(not terkunci)
         self.baris_semua.set_sensitive(not terkunci)
+        self.tombol_tambah.set_sensitive(not terkunci)
         if terkunci:
             self.putaran.start()
             self.judul.set_subtitle(keterangan)

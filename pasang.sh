@@ -47,6 +47,18 @@ fi
 cp "$DIR_APP/config/config.yaml" "$DIR_UPSTREAM/config.yaml"
 oke "REVISION C, COM_PORT AUTO, tema berkutip"
 
+# --------------------------------------------------------- 3b. tema sendiri
+info "Pasang ulang tema buatan sendiri"
+# Tema buatan sendiri disimpan di ~/.local/share/aio-lcd/themes lalu di-symlink
+# ke res/themes. Klon upstream yang baru tidak punya symlink itu, jadi
+# dipasang ulang di sini — isinya sendiri tidak pernah ikut hilang.
+PULIH=$(AIO_LCD_UPSTREAM="$DIR_UPSTREAM" python3 -c "
+import sys; sys.path.insert(0, '$DIR_APP')
+import lcd_tema
+print(len(lcd_tema.PustakaTema().segarkan_tautan()))
+" 2>/dev/null || echo 0)
+oke "$PULIH tema buatan sendiri tertaut kembali"
+
 # ------------------------------------------------------------------- 4. udev
 info "Pasang izin port serial (udev)"
 TUJUAN=/etc/udev/rules.d/70-turing-smart-screen.rules
