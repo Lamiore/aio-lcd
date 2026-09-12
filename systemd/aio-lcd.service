@@ -1,0 +1,19 @@
+[Unit]
+Description=Layar LCD AIO ID-Cooling (Turing Smart Screen 2.1")
+Documentation=https://github.com/mathoudebine/turing-smart-screen-python
+After=graphical-session.target
+PartOf=graphical-session.target
+# Izin ke port serial lewat ACL uaccess baru ada setelah sesi lokal aktif,
+# dan layar butuh beberapa detik untuk bangun setelah boot. Jangan batasi
+# jumlah percobaan ulang, biarkan Restart= yang mengurus.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ram/workspace/projects/turing-smart-screen-python
+ExecStart=/home/ram/workspace/projects/turing-smart-screen-python/.venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=graphical-session.target

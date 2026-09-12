@@ -1,0 +1,17 @@
+# Turing Smart Screen 2.1" (panel LCD ID-Cooling SL360 PRO SE)
+#
+# Layar ini berganti VID/PID saat dibangunkan: saat tidur dia muncul sebagai
+# 1a86:ca21 (serial CT21INCH), lalu re-enumerate jadi salah satu id di bawah.
+# Semuanya perlu diberi izin, kalau tidak auto-detect akan putus di tengah.
+# PENTING: nama berkas harus bernomor < 73. Tag uaccess dikonsumsi oleh
+# /usr/lib/udev/rules.d/73-seat-late.rules, jadi rule bernomor 99 memasang
+# tag-nya terlalu telat dan ACL tidak pernah terbentuk.
+# Daftar id diambil dari library/lcd/lcd_comm_rev_c.py baris 142-158.
+
+# Keadaan tidur
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="ca21", TAG+="uaccess", GROUP="dialout", MODE="0660"
+
+# Keadaan bangun
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0525", ATTRS{idProduct}=="a4a7", TAG+="uaccess", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1d6b", ATTRS{idProduct}=="0121", TAG+="uaccess", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1d6b", ATTRS{idProduct}=="0106", TAG+="uaccess", GROUP="dialout", MODE="0660"

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Tema LCD AIO
+Comment=Ganti tema layar LCD pada pendingin AIO
+Exec=@DIR_APP@/tema-lcd.py
+Icon=preferences-desktop-theme
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=lcd;aio;tema;theme;pendingin;cooler;
+StartupNotify=true
