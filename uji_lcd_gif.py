@@ -26,9 +26,19 @@ def buat_gif(jalur: Path, n=4, ukuran=(320, 240), durasi_ms=100, mode="RGB"):
 class UjiPerkiraanFps(unittest.TestCase):
     def test_cocok_dengan_angka_terukur(self):
         # Yang diuji: rumusnya menghasilkan kembali angka yang diukur di
-        # perangkat, bukan sekadar mengembalikan sesuatu.
-        self.assertAlmostEqual(lg.perkiraan_fps(480, 480), 2.89, delta=0.15)
-        self.assertAlmostEqual(lg.perkiraan_fps(240, 240), 11.6, delta=0.6)
+        # perangkat, bukan sekadar mengembalikan sesuatu. Layar penuh lewat
+        # jalur pembaruan sebagian terukur 3,59-3,61 fps.
+        self.assertAlmostEqual(lg.perkiraan_fps(480, 480), 3.6, delta=0.2)
+
+    def test_perkiraan_tidak_pernah_menjanjikan_lebih(self):
+        # 240x240 terukur 15,6-19,0 fps di perangkat. Perkiraannya sengaja di
+        # bawah itu: lebih baik tampil lebih baik daripada yang dijanjikan.
+        self.assertLess(lg.perkiraan_fps(240, 240), 15.6)
+
+    def test_memakai_tiga_byte_per_piksel(self):
+        # Panel 2.1" menerima BGR 3 byte pada jalur pembaruan sebagian; memakai
+        # 4 byte di sini akan meremehkan kemampuannya seperempat.
+        self.assertEqual(lg.BYTE_PER_PIKSEL, 3)
 
     def test_sisi_setengah_bikin_fps_empat_kali(self):
         self.assertAlmostEqual(
@@ -168,63 +178,61 @@ class UjiDelta(unittest.TestCase):
 
     def test_latar_diam_menghemat_banyak(self):
         bingkai = lg.muat_bingkai(self._latar_diam(), 240)
-        p = lg.susun_perintah(bingkai, 0, 0)
-        self.assertGreater(lg.hemat(p, 240), 0.5, "latar diam seharusnya hemat besar")
+        self.assertGreater(lg.hemat(bingkai), 0.5, "latar diam seharusnya hemat besar")
 
     def test_berubah_total_tidak_menghemat(self):
         bingkai = lg.muat_bingkai(self._berubah_total(), 240)
-        p = lg.susun_perintah(bingkai, 0, 0)
-        self.assertLess(lg.hemat(p, 240), 0.05)
+        self.assertLess(lg.hemat(bingkai), 0.05)
 
     def test_potongan_digeser_sesuai_offsetnya(self):
-        bingkai = lg.muat_bingkai(self._latar_diam(), 240)
-        p = lg.susun_perintah(bingkai, 120, 120)
-        kecil = [q for q in p if q.gambar is not None and q.gambar.width < 240]
-        self.assertTrue(kecil, "tidak ada potongan sama sekali")
-        for q in kecil:
-            # Potongan harus ditempatkan relatif terhadap posisi bingkai,
-            # kalau tidak gambarnya mendarat di tempat yang salah.
-            self.assertGreaterEqual(q.x, 120)
-            self.assertGreaterEqual(q.y, 120)
-
-    def test_bingkai_kembar_tidak_dikirim(self):
-        im = Image.new("RGB", (120, 120), (5, 5, 5))
-        b = [lg.Bingkai(im, 0.1), lg.Bingkai(im, 0.1)]
-        p = lg.susun_perintah(b, 0, 0)
-        self.assertTrue(all(q.gambar is None for q in p), "bingkai identik tidak perlu dikirim")
-
-    def test_satu_bingkai_dikirim_utuh(self):
-        im = Image.new("RGB", (120, 120), (5, 5, 5))
-        p = lg.susun_perintah([lg.Bingkai(im, 0.1)], 7, 9)
-        self.assertEqual(len(p), 1)
-        self.assertIsNotNone(p[0].gambar)
-        self.assertEqual((p[0].x, p[0].y), (7, 9))
-
-    def test_potong_perubahan_mengembalikan_kotak_kecil(self):
         b = lg.muat_bingkai(self._latar_diam(), 240)
-        g, x, y = lg.potong_perubahan(b[0].gambar, b[1].gambar, 100, 100)
-        self.assertLess(g.width * g.height, 240 * 240, "seharusnya potongan, bukan bingkai utuh")
-        self.assertGreaterEqual(x, 100)
-        self.assertGreaterEqual(y, 100)
+        langkah = lg.perintah_gambar(b[0].gambar, b[1].gambar, 120, 120)
+        self.assertEqual(len(langkah), 1)
+        gbr, x, y = langkah[0]
+        self.assertLess(gbr.width * gbr.height, 240 * 240, "seharusnya potongan")
+        # Potongan harus ditempatkan relatif terhadap posisi bingkai, kalau
+        # tidak gambarnya mendarat di tempat yang salah.
+        self.assertGreaterEqual(x, 120)
+        self.assertGreaterEqual(y, 120)
 
-    def test_potong_perubahan_kirim_utuh_kalau_beda_jauh(self):
-        b = lg.muat_bingkai(self._berubah_total(), 240)
-        g, x, y = lg.potong_perubahan(b[0].gambar, b[1].gambar, 5, 5)
-        self.assertEqual(g.size, (240, 240))
-        self.assertEqual((x, y), (5, 5))
+    def test_bingkai_kembar_tidak_kirim_apa_apa(self):
+        im = Image.new("RGB", (120, 120), (9, 9, 9))
+        self.assertEqual(lg.perintah_gambar(im, im, 0, 0), [])
 
-    def test_potong_perubahan_bingkai_kembar_tidak_kirim_apa_apa_besar(self):
-        im = Image.new("RGB", (240, 240), (9, 9, 9))
-        g, _, _ = lg.potong_perubahan(im, im, 0, 0)
-        self.assertEqual(g.size, (1, 1), "bingkai kembar tidak perlu kirim bingkai utuh")
+    def test_tanpa_pembanding_kirim_penuh(self):
+        im = Image.new("RGB", (120, 120), (9, 9, 9))
+        langkah = lg.perintah_gambar(None, im, 7, 9)
+        self.assertEqual(len(langkah), 1)
+        self.assertEqual(langkah[0][0].size, (120, 120))
+        self.assertEqual(langkah[0][1:], (7, 9))
 
-    def test_potong_perubahan_terhadap_bingkai_lompat(self):
+    def test_pembanding_bingkai_lompat_memberi_kotak_lebih_lebar(self):
         # Kalau bingkai dilewati, pembandingnya bingkai terakhir yang digambar.
-        # Hasilnya harus tetap kotak yang mencakup kedua posisi benda.
         b = lg.muat_bingkai(self._latar_diam(), 240)
-        dekat, _, _ = lg.potong_perubahan(b[0].gambar, b[1].gambar, 0, 0)
-        jauh, _, _ = lg.potong_perubahan(b[0].gambar, b[4].gambar, 0, 0)
-        self.assertGreater(jauh.width, dekat.width, "lompat lebih jauh = kotak lebih lebar")
+        dekat = lg.perintah_gambar(b[0].gambar, b[1].gambar, 0, 0)[0][0]
+        jauh = lg.perintah_gambar(b[0].gambar, b[4].gambar, 0, 0)[0][0]
+        self.assertGreater(jauh.width, dekat.width)
+
+    def test_layar_penuh_dipecah_supaya_tidak_lewat_jalur_bgra(self):
+        """Regresi terukur: 480x480 di (0,0) memakai jalur BGRA 4 byte upstream
+        (339-369 ms), sedangkan jalur sebagian memakai BGR 3 byte (251-277 ms).
+        Luasnya cuma beda 0,2%, waktunya ~25%. Jadi bingkai sebesar layar penuh
+        harus dipecah supaya jatuh ke jalur sebagian."""
+        penuh = Image.new("RGB", (480, 480), (1, 2, 3))
+        langkah = lg.perintah_gambar(None, penuh, 0, 0, kanvas=480)
+        self.assertEqual(len(langkah), 2, "bingkai selayar penuh harus dipecah")
+        self.assertTrue(all(g.height < 480 for g, _, _ in langkah))
+        # Gabungannya harus menutupi seluruh kanvas, tanpa celah dan tanpa tumpang tindih.
+        tinggi = sorted((y, y + g.height) for g, _, y in langkah)
+        self.assertEqual(tinggi[0][0], 0)
+        self.assertEqual(tinggi[-1][1], 480)
+        self.assertEqual(tinggi[0][1], tinggi[1][0])
+
+    def test_tidak_dipecah_kalau_bukan_selayar_penuh(self):
+        # GIF 240 di tengah tidak pernah menyentuh jalur penuh, jadi jangan
+        # dipecah — itu cuma menambah satu perintah tanpa guna.
+        kecil = Image.new("RGB", (240, 240), (1, 2, 3))
+        self.assertEqual(len(lg.perintah_gambar(None, kecil, 120, 120, kanvas=480)), 1)
 
     def test_rasio_berubah_membedakan_dua_watak(self):
         self.assertLess(lg.rasio_berubah(self._latar_diam()), 0.3)

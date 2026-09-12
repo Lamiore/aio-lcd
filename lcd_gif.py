@@ -14,11 +14,14 @@ from PIL import Image, ImageChops, ImageSequence
 
 from lcd_tema import pas_ke
 
-# Laju data panel, diukur langsung 12 September 2026 dengan menimpa bingkai
-# berulang: 1948 KB/dtk pada 480x480, 2564 KB/dtk pada 240x240, 2382 KB/dtk
-# pada 120x120. Dipakai angka paling pesimistis supaya perkiraan fps tidak
-# pernah menjanjikan lebih dari yang bisa ditepati.
-LAJU_BYTE_PER_DETIK = 1948 * 1024
+# Laju data panel, diukur langsung 12 September 2026 lewat jalur pembaruan
+# sebagian: 480x479 selesai dalam 251-277 ms, jadi 2,5-2,75 MB/dtk pada
+# 3 byte/piksel. Dipakai angka pesimistis supaya perkiraan fps tidak pernah
+# menjanjikan lebih dari yang bisa ditepati.
+LAJU_BYTE_PER_DETIK = 2400 * 1024
+
+# Panel 2.1" menerima 3 byte/piksel (BGR) pada jalur pembaruan sebagian.
+BYTE_PER_PIKSEL = 3
 
 # Sisi kanvas panel 2.1" dalam piksel.
 KANVAS_BAKU = 480
@@ -42,7 +45,7 @@ def perkiraan_fps(lebar: int, tinggi: int) -> float:
     Satu piksel = 3 byte. Angkanya turun sebanding luas, bukan sisi, jadi
     mengecilkan sisi setengah bikin fps-nya empat kali lipat.
     """
-    byte = max(1, lebar * tinggi * 3)
+    byte = max(1, lebar * tinggi * BYTE_PER_PIKSEL)
     return LAJU_BYTE_PER_DETIK / byte
 
 
@@ -93,7 +96,7 @@ def rasio_berubah(jalur: Path) -> float:
         if kotak is None:
             continue
         bagian = ((kotak[2] - kotak[0]) * (kotak[3] - kotak[1])) / luas
-        total += 1.0 if bagian >= AMBANG_UTUH else bagian
+        total += bagian
     return max(0.01, total / len(bingkai))
 
 
@@ -150,25 +153,6 @@ def posisi_tengah(ukuran: int, kanvas: int = KANVAS_BAKU) -> tuple[int, int]:
     return sisa // 2, sisa // 2
 
 
-# Di atas ambang ini, mengirim potongan tidak lagi menguntungkan: datanya
-# hampir sama banyak sementara pembaruan sebagian punya ongkos perintah
-# sendiri. Lebih baik sekalian kirim bingkai utuh.
-AMBANG_UTUH = 0.75
-
-
-@dataclass(frozen=True)
-class Perintah:
-    """Satu langkah pemutaran: gambar apa, di mana, lalu tunggu berapa lama.
-
-    `gambar` boleh None untuk bingkai yang isinya sama persis dengan
-    sebelumnya — tidak ada yang perlu dikirim, cukup ditunggu.
-    """
-    gambar: Image.Image | None
-    x: int
-    y: int
-    durasi: float
-
-
 def latar_buram(
     bingkai: Image.Image, kanvas: int = KANVAS_BAKU, kabur: int = 18, terang: float = 1.0
 ) -> Image.Image:
@@ -195,75 +179,78 @@ def latar_buram(
     return ImageEnhance.Brightness(besar).enhance(terang)
 
 
-def potong_perubahan(
-    sebelum: Image.Image, sesudah: Image.Image, x0: int, y0: int
-) -> tuple[Image.Image, int, int]:
-    """Kembalikan (gambar, x, y) yang cukup dikirim untuk berpindah antar dua bingkai.
+def _hindari_jalur_penuh(
+    gambar: Image.Image, x: int, y: int, kanvas: int
+) -> list[tuple[Image.Image, int, int]]:
+    """Pecah dua kalau pengiriman ini akan memakai jalur layar-penuh upstream.
 
-    Dipakai saat pemutaran, bukan disiapkan di muka, karena bingkai bisa
-    dilewati kalau panel tidak sanggup mengejar — pembandingnya harus bingkai
-    yang terakhir benar-benar digambar. Ongkosnya ~1 ms untuk 480x480,
-    dibanding ratusan milidetik waktu kirim, jadi tidak terasa.
+    Upstream memilih jalur berdasarkan posisi dan ukuran: tepat di (0,0) dan
+    sebesar layar akan lewat `_generate_full_image`, yang **selalu** menyandi
+    BGRA 4 byte/piksel. Jalur pembaruan sebagian menyandi BGR 3 byte untuk
+    panel 2.1" ini — seperempat lebih sedikit.
 
-    Kalau bedanya sudah melebihi AMBANG_UTUH, bingkai utuh yang dikirim:
-    datanya hampir sama banyak sementara pembaruan sebagian punya ongkos
-    perintah sendiri.
+    Terukur: 480x480 di (0,0) butuh 339-369 ms, sedangkan 480x479 di (0,0)
+    butuh 251-277 ms. Luasnya cuma beda 0,2%, waktunya beda ~25% — persis
+    rasio 4:3 byte. Memecahnya jadi dua bagian membuat keduanya lewat jalur
+    sebagian, dan ongkos satu perintah tambahan jauh lebih murah daripada
+    seperempat data.
     """
+    if not (x == 0 and y == 0 and gambar.width == kanvas and gambar.height == kanvas):
+        return [(gambar, x, y)]
+    tengah = gambar.height // 2
+    return [
+        (gambar.crop((0, 0, gambar.width, tengah)), 0, 0),
+        (gambar.crop((0, tengah, gambar.width, gambar.height)), 0, tengah),
+    ]
+
+
+def perintah_gambar(
+    sebelum: Image.Image | None,
+    sesudah: Image.Image,
+    x0: int,
+    y0: int,
+    kanvas: int = KANVAS_BAKU,
+) -> list[tuple[Image.Image, int, int]]:
+    """Langkah menggambar untuk berpindah dari satu bingkai ke bingkai berikutnya.
+
+    `sebelum=None` berarti isi layar tidak diketahui, jadi bingkai penuh yang
+    dikirim. Kalau tidak, cukup kotak pembatas dari piksel yang berubah.
+
+    Dihitung saat pemutaran, bukan disiapkan di muka, karena bingkai bisa
+    dilewati kalau panel tidak sanggup mengejar — pembandingnya harus bingkai
+    yang terakhir benar-benar digambar. Ongkos diff ~1 ms untuk 480x480,
+    dibanding ratusan milidetik waktu kirim.
+
+    Selalu kotak pembatas, tidak pernah sengaja mengirim lebih: kotak itu
+    menurut definisi lebih kecil atau sama dengan bingkai penuh, dan ongkos
+    perintahnya sama saja. Ambang "kalau bedanya besar kirim utuh saja" yang
+    sempat dipakai di sini justru merugikan — selain mengirim piksel yang tidak
+    berubah, pengiriman sebesar layar penuh malah jatuh ke jalur BGRA yang
+    lebih boros.
+    """
+    if sebelum is None:
+        return _hindari_jalur_penuh(sesudah, x0, y0, kanvas)
     kotak = ImageChops.difference(sebelum, sesudah).getbbox()
     if kotak is None:
-        # Tidak ada yang berubah; kirim satu piksel saja daripada bingkai utuh.
-        return sesudah.crop((0, 0, 1, 1)), x0, y0
-    lebar, tinggi = kotak[2] - kotak[0], kotak[3] - kotak[1]
-    if lebar * tinggi >= sesudah.width * sesudah.height * AMBANG_UTUH:
-        return sesudah, x0, y0
-    return sesudah.crop(kotak), x0 + kotak[0], y0 + kotak[1]
-
-
-def susun_perintah(bingkai: list[Bingkai], x0: int, y0: int) -> list[Perintah]:
-    """Ubah daftar bingkai jadi langkah-langkah yang hanya mengirim bagian berubah.
-
-    Panel menahan apa yang sudah digambar, jadi bingkai berikutnya cukup
-    menimpa kotak yang isinya berbeda. Untuk GIF berlatar diam ini beda jauh:
-    kotak berubahnya bisa cuma 5% luas layar, dan yang menentukan fps memang
-    jumlah byte yang dikirim.
-
-    Pembandingnya melingkar — bingkai pertama dibandingkan dengan yang
-    terakhir — karena pemutarannya berulang, jadi saat kembali ke awal layar
-    sedang menampilkan bingkai terakhir.
-    """
-    if not bingkai:
         return []
-    if len(bingkai) == 1:
-        b = bingkai[0]
-        return [Perintah(b.gambar, x0, y0, b.durasi)]
-
-    luas_penuh = bingkai[0].gambar.width * bingkai[0].gambar.height
-    hasil: list[Perintah] = []
-    for i, b in enumerate(bingkai):
-        sebelum = bingkai[i - 1].gambar  # i=0 → bingkai terakhir, sesuai perulangan
-        kotak = ImageChops.difference(sebelum, b.gambar).getbbox()
-        if kotak is None:
-            hasil.append(Perintah(None, x0, y0, b.durasi))
-            continue
-        lebar, tinggi = kotak[2] - kotak[0], kotak[3] - kotak[1]
-        if lebar * tinggi >= luas_penuh * AMBANG_UTUH:
-            hasil.append(Perintah(b.gambar, x0, y0, b.durasi))
-        else:
-            hasil.append(
-                Perintah(b.gambar.crop(kotak), x0 + kotak[0], y0 + kotak[1], b.durasi)
-            )
-    return hasil
+    if kotak == (0, 0, sesudah.width, sesudah.height):
+        return _hindari_jalur_penuh(sesudah, x0, y0, kanvas)
+    return [(sesudah.crop(kotak), x0 + kotak[0], y0 + kotak[1])]
 
 
-def hemat(perintah: list[Perintah], ukuran: int) -> float:
-    """Berapa bagian data yang dihemat dibanding mengirim bingkai utuh terus.
+def hemat(bingkai: list[Bingkai]) -> float:
+    """Bagian data yang dihemat dibanding mengirim bingkai penuh terus-menerus.
 
     0 berarti tidak menghemat apa pun (tiap bingkai berubah seluruhnya).
     """
-    if not perintah:
+    if len(bingkai) < 2:
         return 0.0
-    penuh = ukuran * ukuran * len(perintah)
-    dikirim = sum(
-        0 if p.gambar is None else p.gambar.width * p.gambar.height for p in perintah
-    )
-    return 1 - (dikirim / penuh) if penuh else 0.0
+    luas = bingkai[0].gambar.width * bingkai[0].gambar.height
+    if not luas:
+        return 0.0
+    terkirim = 0
+    for i, b in enumerate(bingkai):
+        kotak = ImageChops.difference(bingkai[i - 1].gambar, b.gambar).getbbox()
+        if kotak is not None:
+            terkirim += (kotak[2] - kotak[0]) * (kotak[3] - kotak[1])
+    return 1 - terkirim / (luas * len(bingkai))

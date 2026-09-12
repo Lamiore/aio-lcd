@@ -202,6 +202,38 @@ Memecah layar jadi petak-petak (2×2, 4×4, 16×16) sudah dicoba dan **tidak
 membantu**: kalau perubahannya tersebar, hampir semua petak ikut terkirim dan
 hasilnya lebih boros daripada satu kotak pembatas.
 
+### Hindari jalur layar-penuh upstream — dia memakai 4 byte/piksel
+
+Ini menghemat 25% dan gampang terlewat. Upstream memilih penyandian di
+`_generate_update_image`:
+
+```python
+if self.sub_revision != SubRevision.REV_2INCH and self.rom_version > 88:
+    img_data = image_to_BGRA(image)   # 4 byte/piksel
+else:
+    img_data = image_to_BGR(image)    # 3 byte/piksel  ← panel 2.1"
+```
+
+Tapi `_generate_full_image` — jalur yang dipakai kalau gambarnya tepat di
+`(0,0)` dan sebesar layar — **selalu** `image_to_BGRA`, tanpa percabangan itu.
+Jadi mengirim satu bingkai selayar penuh lewat jalur "sebagian" justru lebih
+murah daripada lewat jalur "penuh".
+
+Terukur di perangkat:
+
+| cara mengirim satu bingkai 480×480 | waktu | fps |
+|---|---|---|
+| `480×480` di (0,0) — jalur penuh | 339–369 ms | 2,7–3,0 |
+| `480×479` di (0,0) — jalur sebagian | 251–277 ms | 3,6–4,0 |
+| dua potong `480×240` — jalur sebagian | 279 ms | 3,6 |
+
+Luasnya cuma beda 0,2%, waktunya beda ~25% — persis rasio 4:3 byte. Karena itu
+bingkai selayar penuh dipecah jadi dua sebelum dikirim.
+
+Efek sampingnya: ambang "kalau bedanya besar, kirim utuh saja" yang sempat
+dipakai ternyata merugikan dua kali — mengirim piksel yang tidak berubah, dan
+menjatuhkan pengiriman ke jalur BGRA. Sekarang selalu kotak pembatas.
+
 ### Laju mentahnya tidak bisa dipercepat dari perangkat lunak
 
 Sudah ditelusuri sampai habis, supaya tidak ada yang mengulang:
@@ -335,7 +367,7 @@ dengan tangan.
 | `lcd_tema.py` | pembuatan tema, impor, symlink, penghapusan |
 | `lcd_gif.py` | pembacaan bingkai GIF, perkiraan fps |
 | `gif_pemutar.py` | pemutar GIF — jalan dengan venv upstream |
-| `uji_*.py` | 102 uji — `for f in uji_*.py; do python3 $f; done` |
+| `uji_*.py` | 103 uji — `for f in uji_*.py; do python3 $f; done` |
 | `pasang.sh` | pemasang, aman dijalankan berulang |
 | `config/config.yaml` | konfigurasi upstream yang sudah disetel |
 | `udev/` | aturan izin port serial |

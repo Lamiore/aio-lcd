@@ -133,8 +133,9 @@ def putar(lcd: LcdCommRevC, bingkai: list[lg.Bingkai], ukuran: int, ulang: int) 
     """
     x, y = lg.posisi_tengah(ukuran, KANVAS)
 
-    # Bingkai pertama harus utuh: isi layar saat ini tidak diketahui.
-    lcd.DisplayPILImage(bingkai[0].gambar, x, y)
+    # Bingkai pertama dikirim penuh: isi layar saat ini tidak diketahui.
+    for gbr, gx, gy in lg.perintah_gambar(None, bingkai[0].gambar, x, y, KANVAS):
+        lcd.DisplayPILImage(gbr, gx, gy)
     terakhir = bingkai[0].gambar
 
     putaran = 0
@@ -171,7 +172,8 @@ def putar(lcd: LcdCommRevC, bingkai: list[lg.Bingkai], ukuran: int, ulang: int) 
                 continue
 
             mulai = time.monotonic()
-            lcd.DisplayPILImage(*lg.potong_perubahan(terakhir, b.gambar, x, y))
+            for gbr, gx, gy in lg.perintah_gambar(terakhir, b.gambar, x, y, KANVAS):
+                lcd.DisplayPILImage(gbr, gx, gy)
             waktu_kirim += time.monotonic() - mulai
             terakhir = b.gambar
             terkirim += 1
@@ -254,8 +256,7 @@ def main() -> int:
 
     sanggup = lg.perkiraan_fps(a.ukuran, a.ukuran)
     diminta = lg.fps_diminta(bingkai)
-    perintah_awal = lg.susun_perintah(bingkai, 0, 0)
-    hemat = lg.hemat(perintah_awal, a.ukuran)
+    hemat = lg.hemat(bingkai)
     print(f"{len(bingkai)} bingkai @ {a.ukuran}x{a.ukuran} — "
           f"diminta {diminta:.1f} fps, sanggup {sanggup:.1f} fps"
           + (f", hemat data {hemat*100:.0f}% (cuma bagian yang berubah)" if hemat > 0.02 else ""),
