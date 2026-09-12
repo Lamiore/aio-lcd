@@ -11,6 +11,7 @@ from pathlib import Path
 
 from PIL import Image
 
+import lcd_tataletak as ltl
 import lcd_tema as lt
 
 
@@ -245,6 +246,186 @@ class UjiUkuranTema(Dasar):
 
     def test_tanpa_berkas_mengembalikan_kosong(self):
         self.assertEqual(lt.ukuran_tema(self.res / "hantu"), "")
+
+
+
+
+class UjiDariTataLetak(Dasar):
+    """Tema yang dibuat dari tata letak sendiri, bukan dari tema contoh."""
+
+    def setUp(self):
+        super().setUp()
+        self.gambar = Path(self.tmp.name) / "foto.png"
+        Image.new("RGB", (900, 600), (80, 120, 200)).save(self.gambar)
+        self.tata = ltl.contoh("grid")
+
+    def test_berkasnya_lengkap(self):
+        d = self.pustaka.buat_dari_tata_letak(self.gambar, "fotoku", self.tata)
+        for berkas in ("theme.yaml", "background.png", "preview.png"):
+            self.assertTrue((d / berkas).is_file(), berkas)
+
+    def test_latar_dipotong_seukuran_kanvas(self):
+        d = self.pustaka.buat_dari_tata_letak(self.gambar, "fotoku", self.tata)
+        with Image.open(d / "background.png") as im:
+            self.assertEqual(im.size, self.tata.kanvas)
+
+    def test_tertaut_ke_res_themes(self):
+        self.pustaka.buat_dari_tata_letak(self.gambar, "fotoku", self.tata)
+        self.assertTrue((self.res / "fotoku").is_symlink())
+        self.assertIn("fotoku", self.pustaka.daftar_pengguna())
+
+    def test_bisa_dibuka_lagi_di_editor(self):
+        """Inti dari cara ini: temanya bisa disunting lagi.
+
+        Tema hasil `buat_dari_gambar` tidak bisa, karena theme.yaml-nya milik
+        tema contoh dan memuat bagian yang tidak dimodelkan editor.
+        """
+        d = self.pustaka.buat_dari_tata_letak(self.gambar, "fotoku", self.tata)
+        balik = ltl.baca_tema(d)
+        self.assertEqual(len(balik.elemen), len(self.tata.elemen))
+
+    def test_tema_donor_ikut_bisa_dibuka_kalau_isinya_muat(self):
+        """Yang menentukan bukan siapa penulisnya, tapi apa isinya.
+
+        Tema yang tata letaknya dulu dipinjam dari tema contoh tetap bisa
+        disetel selama seluruh isinya muat di model editor — menolaknya cuma
+        karena baris `author:`-nya berbeda berarti temanya harus dibuat ulang
+        dari awal tanpa alasan.
+        """
+        d = self.pustaka.buat_dari_gambar(self.gambar, "lama", donor="26")
+        self.assertEqual(ltl.baca_tema(d).elemen, [])   # tema contoh di uji ini tanpa STATS
+
+    def test_tema_donor_bergrafik_ditolak(self):
+        """Grafik batang tidak dimodelkan editor, jadi menyimpannya akan
+        membuangnya diam-diam — lebih baik ditolak di depan."""
+        buat_tema(self.res, "bergrafik")
+        (self.res / "bergrafik" / "theme.yaml").write_text(
+            '---\nauthor: "@asli"\ndisplay:\n  DISPLAY_SIZE: 2.1"\n'
+            'STATS:\n  CPU:\n    PERCENTAGE:\n      GRAPH:\n        SHOW: True\n',
+            encoding="utf-8")
+        d = self.pustaka.buat_dari_gambar(self.gambar, "lama2", donor="bergrafik")
+        with self.assertRaises(ltl.GalatTataLetak):
+            ltl.baca_tema(d)
+
+    def test_nama_bentrok_ditolak(self):
+        self.pustaka.buat_dari_tata_letak(self.gambar, "fotoku", self.tata)
+        with self.assertRaises(lt.GalatTema):
+            self.pustaka.buat_dari_tata_letak(self.gambar, "fotoku", self.tata)
+
+    def test_gambar_tidak_ada(self):
+        with self.assertRaises(lt.GalatTema):
+            self.pustaka.buat_dari_tata_letak(Path("/tidak/ada.png"), "x", self.tata)
+
+    def test_gagal_tidak_meninggalkan_sisa(self):
+        with self.assertRaises(lt.GalatTema):
+            self.pustaka.buat_dari_tata_letak(Path("/tidak/ada.png"), "x", self.tata)
+        self.assertFalse((self.res / "x").exists())
+        self.assertFalse((self.data / "x").exists())
+
+
+class UjiBersihkanUkuran(unittest.TestCase):
+    """Penjaga-penjaga `hapus_tema_ukuran_lain`.
+
+    Ini satu-satunya operasi yang menghapus berkas milik upstream, jadi tiap
+    hal yang tidak boleh tersentuh punya ujinya sendiri.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        akar = Path(self.tmp.name)
+        self.res = akar / "res_themes"
+        self.data = akar / "data_themes"
+        self.res.mkdir()
+        self.data.mkdir()
+
+        buat_tema(self.res, "26", ukuran='2.1"')
+        buat_tema(self.res, "45", ukuran='2.1"')
+        buat_tema(self.res, "BigClock", ukuran='3.5"')
+        buat_tema(self.res, "5inchTheme2", ukuran='5"')
+        buat_tema(self.res, "TanpaUkuran")
+        # Tema tanpa kunci DISPLAY_SIZE dianggap 3.5" oleh upstream.
+        (self.res / "TanpaUkuran" / "theme.yaml").write_text(
+            '---\nauthor: "@asli"\ndisplay:\n  DISPLAY_ORIENTATION: portrait\n',
+            encoding="utf-8")
+
+        # Berkas-berkas yang memang ada di res/themes dan bukan tema.
+        (self.res / "default.yaml").write_text("STATS:\n  CPU:\n", encoding="utf-8")
+        (self.res / "theme_example.yaml").write_text("---\n", encoding="utf-8")
+        (self.res / "README.md").write_text("# tema\n", encoding="utf-8")
+        (self.res / "scale_theme.py").write_text("pass\n", encoding="utf-8")
+
+        # Direktori yang bukan tema (tidak ada theme.yaml).
+        (self.res / "bukan-tema").mkdir()
+        (self.res / "bukan-tema" / "catatan.txt").write_text("x", encoding="utf-8")
+
+        # Tema buatan sendiri: direktori data + symlink, ukurannya sengaja 5"
+        # supaya ketahuan kalau symlink ikut tersapu karena ukurannya.
+        buat_tema(self.data, "punyaku", ukuran='5"')
+        (self.res / "punyaku").symlink_to(self.data / "punyaku", target_is_directory=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _bersihkan(self, **kw):
+        return lt.hapus_tema_ukuran_lain('2.1"', akar=self.res, **kw)
+
+    def test_menghapus_yang_ukurannya_lain(self):
+        kena = self._bersihkan()
+        self.assertEqual(sorted(kena), ["5inchTheme2", "BigClock", "TanpaUkuran"])
+        for nama in kena:
+            self.assertFalse((self.res / nama).exists(), nama)
+
+    def test_menyisakan_yang_seukuran(self):
+        self._bersihkan()
+        self.assertTrue((self.res / "26").is_dir())
+        self.assertTrue((self.res / "45").is_dir())
+
+    def test_default_yaml_tidak_tersentuh(self):
+        """default.yaml memuat bagian wajib yang ditempelkan ke SEMUA tema.
+
+        Dia berkas, bukan direktori, dan menghapusnya merusak seluruh tema —
+        bukan cuma satu.
+        """
+        self._bersihkan()
+        self.assertTrue((self.res / "default.yaml").is_file())
+
+    def test_berkas_lain_tidak_tersentuh(self):
+        self._bersihkan()
+        for nama in ("theme_example.yaml", "README.md", "scale_theme.py"):
+            self.assertTrue((self.res / nama).is_file(), nama)
+
+    def test_tema_buatan_sendiri_tidak_tersentuh(self):
+        """Symlink dilewati tanpa melihat ukurannya sama sekali."""
+        self._bersihkan()
+        self.assertTrue((self.res / "punyaku").is_symlink())
+        self.assertTrue((self.data / "punyaku").is_dir())
+
+    def test_direktori_bukan_tema_tidak_tersentuh(self):
+        self._bersihkan()
+        self.assertTrue((self.res / "bukan-tema").is_dir())
+
+    def test_yang_dilindungi_tidak_tersentuh(self):
+        """Tema yang sedang terpasang tidak boleh hilang — service gagal memuat."""
+        kena = self._bersihkan(lindungi={"BigClock"})
+        self.assertNotIn("BigClock", kena)
+        self.assertTrue((self.res / "BigClock").is_dir())
+
+    def test_kering_tidak_menghapus_apa_pun(self):
+        kena = self._bersihkan(kering=True)
+        self.assertEqual(sorted(kena), ["5inchTheme2", "BigClock", "TanpaUkuran"])
+        for nama in kena:
+            self.assertTrue((self.res / nama).is_dir(), nama)
+
+    def test_kering_dan_sungguhan_sepakat(self):
+        self.assertEqual(self._bersihkan(kering=True), self._bersihkan())
+
+    def test_dijalankan_dua_kali_aman(self):
+        self._bersihkan()
+        self.assertEqual(self._bersihkan(), [])
+
+    def test_akar_tidak_ada(self):
+        with self.assertRaises(lt.GalatTema):
+            lt.hapus_tema_ukuran_lain('2.1"', akar=self.res / "tidak-ada")
 
 
 if __name__ == "__main__":

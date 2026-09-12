@@ -101,13 +101,15 @@ GTK4 + libadwaita, jalan dengan **Python sistem** (bukan venv upstream), karena
 - **Ganti tema** — petak pratinjau, klik, Terapkan.
 - **Balik 180°** — kalau blok pompanya terpasang terbalik seperti punya saya.
 - **Bikin tema dari gambar sendiri** — pilih foto apa pun, dipotong-tengah ke
-  ukuran kanvas, jadi latar tema baru.
+  ukuran kanvas, lalu **atur sendiri angka pemantauannya** di editor tata letak.
+- **Sunting tata letak** tema yang sudah dibuat, kapan saja.
 - **Impor tema** dari folder atau `.zip`.
 - **Duplikat** tema yang ada untuk diutak-atik tanpa merusak aslinya.
 - **Hapus** — hanya tema buatan sendiri; tema bawaan dan tema yang sedang
   dipakai layar ditolak.
+- **Bersihkan tema ukuran lain** — buang tema bawaan yang bukan `2.1"`.
 
-Defaultnya cuma menampilkan tema berukuran `2.1"`. Dari 79 tema bawaan upstream,
+Defaultnya cuma menampilkan tema berukuran `2.1"`. Dari 74 tema bawaan upstream,
 cuma 5 yang pas; tema ukuran lain tetap mau dimuat tapi tata letaknya melenceng.
 Ada sakelar untuk menampilkan semuanya.
 
@@ -123,14 +125,107 @@ Efek sampingnya berguna: entri `res/themes/` yang berupa symlink **pasti** tema
 buatan sendiri, jadi tidak perlu penanda apa pun untuk tahu mana yang aman
 dihapus.
 
-### Tata letak tema baru dipinjam, bukan dibuat dari nol
+## Editor tata letak
 
-Saat bikin tema dari gambar, kamu memilih satu tema yang ada sebagai contoh
-tata letak; yang diganti cuma latarnya. Menaruh angka di koordinat yang pas itu
-pekerjaan penyunting visual tersendiri, dan meminjam tata letak yang sudah
-terbukti muat di layar ini jauh lebih murah — hasilnya dijamin tidak melenceng.
-Ukuran kanvasnya pun dibaca dari latar tema contoh, bukan dari tabel hafalan,
-jadi ukuran layar berapa pun ikut benar.
+Setelah memilih gambar, angka pemantauannya diatur sendiri: **warna, ukuran,
+huruf, dan letak** tiap angka, plus labelnya. Angka diseret langsung di
+pratinjau; tombol panah menggeser satu piksel, Shift+panah sepuluh.
+
+Yang bisa dipasang: CPU (pemakaian, frekuensi, suhu), GPU (pemakaian, memori,
+suhu), RAM, disk, tanggal, dan jam. Ada tujuh susunan siap pakai sebagai titik
+awal — petak 2×2, satu kolom, baris bawah, empat sudut, dan seterusnya — karena
+mulai dari kanvas kosong itu pekerjaan yang membosankan.
+
+Tema yang dibuat begini bisa **dibuka lagi** lewat *Sunting tata letak…*.
+
+### Pratinjaunya digambar penggambar yang sama dengan `preview.png`
+
+Bukan digambar ulang dengan Cairo atau Pango. Dua penggambar berarti dua hasil,
+dan yang terlihat waktu menyetel harus sama persis dengan yang keluar di panel.
+Satu bingkai butuh ~1,2 ms, jadi menggambar ulang seluruh kanvas tiap kali
+kursor bergerak masih jauh di bawah anggaran 60 fps — tidak perlu jalur cepat
+terpisah, dan itu yang menjaga pratinjaunya jujur.
+
+`preview.png` tema pun digambar dengan tata letaknya, bukan disalin dari latar,
+jadi kartu tema di aplikasi memperlihatkan tata letak yang sebenarnya.
+
+### Tiga hal di berkas tema yang gagalnya tidak berisik
+
+Ketiganya ditemukan dengan membaca kode upstream, dan masing-masing punya uji
+sendiri di `uji_lcd_tataletak.py`:
+
+1. **Nama daunnya tidak seragam.** CPU dan GPU memakai `TEXT`, tetapi RAM dan
+   disk memakai `PERCENT_TEXT` — `library/stats.py` memanggil
+   `display_themed_percent_value` pada `MEMORY.VIRTUAL.PERCENT_TEXT` dan
+   `DISK.USED.PERCENT_TEXT`. Menyusun jalur dengan menempelkan `"TEXT"`
+   menghasilkan tema yang tetap dimuat tanpa keluhan, cuma dua angkanya tidak
+   pernah muncul.
+2. **`INTERVAL` letaknya berbeda-beda.** Di CPU ada di dalam tiap metrik
+   (`CPU.PERCENTAGE.INTERVAL`); di GPU, RAM, disk, dan tanggal ada di tingkat
+   perangkat (`GPU.INTERVAL`). Upstream memutuskan menggambar atau tidak dari
+   nilai itu, jadi salah tempat berarti angkanya diam.
+3. **`BACKGROUND_IMAGE` bukan hiasan, itu mekanisme penghapusnya.**
+   `lcd_comm.DisplayText` menggambar teks di atas salinan berkas itu lalu
+   memotongnya sebesar teks. Tanpa kunci itu yang dikirim ke panel kotak warna
+   solid — angkanya jadi bertumpuk kotak putih di atas foto.
+
+Berkas tema juga **tidak punya cara menyatakan urutan gambar**: yang berlaku
+urutan kode upstream (CPU persen → frekuensi → suhu, lalu GPU, RAM, disk,
+tanggal, jam). Katalog jenis di `lcd_tataletak.py` disusun mengikuti urutan itu
+supaya dua angka yang bertindihan tampil sama seperti di panel.
+
+### Buktinya: digambar ulang lewat kode upstream sendiri
+
+```bash
+~/workspace/projects/turing-smart-screen-python/.venv/bin/python \
+  periksa_tema.py <nama-tema> -o /tmp/hasil.png --banding <preview.png>
+```
+
+`periksa_tema.py` memakai backend layar tiruan upstream (`REVISION: SIMU`) —
+backend yang sama dengan `theme-editor.py`, tanpa Tkinter dan tanpa perangkat.
+Dengan `--banding` hasilnya dibandingkan dengan pratinjau kita dan selisih
+pikselnya dilaporkan, jadi dua penggambar itu tidak bisa melenceng diam-diam.
+
+### Yang bisa dan tidak bisa dibuka editor
+
+Yang menentukan **isi temanya**, bukan siapa penulisnya. Editor ini cuma tahu
+angka berupa teks; grafik batang, radial, grafik garis, statistik jaringan, dan
+teks tetap buatan sendiri tidak punya wakilnya, jadi menulis ulang
+`theme.yaml` akan membuangnya diam-diam.
+
+Maka sebuah tema dibuka kalau **salah satu** benar: ditulis editor ini
+(bentuknya sudah pasti), atau seluruh isinya kebetulan muat. Yang kedua itu yang
+membuat tema lama — yang tata letaknya dulu dipinjam dari tema contoh — tetap
+bisa disetel tanpa dibuat ulang dari awal. Kalau ada yang tidak muat, yang
+ditolak menyebutkan bagian mana, bukan sekadar "tidak bisa".
+
+Dari lima tema bawaan 2.1": `26` seluruhnya muat; `30`, `43`, `44` memakai
+grafik batang dan `45` memakai statistik jaringan, jadi keempatnya ditolak.
+(Tema bawaan tetap tidak disunting dari sini — itu isi klon upstream. Duplikat
+dulu.)
+
+### Membuang tema bawaan yang ukurannya lain
+
+*Bersihkan tema ukuran lain…* menghapus tema bawaan yang `DISPLAY_SIZE`-nya
+bukan `2.1"`. Yang **tidak pernah** disentuh, masing-masing ada ujinya:
+
+- apa pun yang bukan direktori — `res/themes` juga memuat `default.yaml`, yang
+  berisi bagian wajib yang ditempelkan ke **semua** tema (menghapusnya merusak
+  semuanya), plus `theme_example.yaml`, `README.md`, `themes.md`,
+  `scale_theme.py`;
+- symlink, karena itu tema buatan sendiri;
+- tema yang sedang terpasang — menghapusnya bikin service gagal memuat;
+- direktori tanpa `theme.yaml`, karena itu bukan tema.
+
+Ini menghapus berkas milik klon upstream. Mengembalikannya:
+
+```bash
+git -C ~/workspace/projects/turing-smart-screen-python restore res/themes
+```
+
+`pasang.sh` **tidak** mengembalikannya — dia cuma mengklon kalau `.git` belum
+ada. Pembaruan upstream akan membawanya kembali, dan itu sebabnya ini perintah
+yang bisa diulang, bukan `rm` sekali jalan.
 
 ### Kenapa tidak pakai `configure.py` bawaan upstream
 
@@ -364,10 +459,13 @@ dengan tangan.
 |---|---|
 | `tema-lcd.py` | aplikasi GTK4: pilih, bikin, impor, duplikat, hapus tema; putar GIF |
 | `lcd_konfig.py` | baca/tulis `config.yaml`, pendataan tema, kendali service |
-| `lcd_tema.py` | pembuatan tema, impor, symlink, penghapusan |
+| `lcd_tema.py` | pembuatan tema, impor, symlink, penghapusan, pembersihan ukuran |
+| `lcd_tataletak.py` | model tata letak, penulis `theme.yaml`, penggambar pratinjau |
+| `editor_tataletak.py` | jendela editor: seret, warnai, atur ukuran angka |
+| `periksa_tema.py` | gambar tema lewat kode upstream — jalan dengan venv upstream |
 | `lcd_gif.py` | pembacaan bingkai GIF, perkiraan fps |
 | `gif_pemutar.py` | pemutar GIF — jalan dengan venv upstream |
-| `uji_*.py` | 103 uji — `for f in uji_*.py; do python3 $f; done` |
+| `uji_*.py` | 188 uji — `for f in uji_*.py; do python3 $f; done` |
 | `pasang.sh` | pemasang, aman dijalankan berulang |
 | `config/config.yaml` | konfigurasi upstream yang sudah disetel |
 | `udev/` | aturan izin port serial |

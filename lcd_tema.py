@@ -25,6 +25,7 @@ import yaml
 from PIL import Image
 
 import lcd_konfig as lk
+import lcd_tataletak as ltl
 
 DIR_DATA = Path(os.environ.get("AIO_LCD_DATA", Path.home() / ".local/share/aio-lcd")).expanduser()
 
@@ -163,6 +164,34 @@ class PustakaTema:
             self._tulis_penulis(bahan, f"gambar sendiri, tata letak dari {donor}")
             return self._pasang_dari(bahan, periksa_nama(nama_baru))
 
+    def buat_dari_tata_letak(self, gambar: Path, nama_baru: str, tata,
+                             keterangan: str = "tata letak sendiri") -> Path:
+        """Bikin tema dari sebuah gambar dengan tata letak yang disusun sendiri.
+
+        Bedanya dengan `buat_dari_gambar`: di sana theme.yaml disalin dari tema
+        contoh dan cuma latarnya yang diganti, jadi letak dan warna angkanya
+        ikut milik orang lain. Di sini theme.yaml ditulis dari nol menurut
+        `tata`, sehingga tiap angka punya tempat, ukuran, dan warnanya sendiri
+        — dan temanya bisa dibuka lagi di editor karena bentuk berkasnya kita
+        yang tentukan.
+        """
+        self._siapkan_tujuan(nama_baru)
+        gambar = Path(gambar)
+        if not gambar.is_file():
+            raise GalatTema(f"Gambar {gambar} tidak ada")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bahan = Path(tmp) / nama_baru
+            bahan.mkdir(parents=True)
+            latar = muat_dan_pas(gambar, tata.kanvas)
+            latar.save(bahan / "background.png")
+            # theme.yaml dan preview.png dua-duanya ditulis dari `tata`, jadi
+            # kartu tema di aplikasi memperlihatkan tata letaknya, bukan cuma
+            # fotonya — sekaligus jadi pemeriksaan mata yang gratis tiap kali
+            # tema dibuat.
+            ltl.tulis_tema(bahan, tata, keterangan=keterangan)
+            return self._pasang_dari(bahan, periksa_nama(nama_baru))
+
     def impor(self, sumber: Path, nama_baru: str | None = None) -> Path:
         """Ambil tema buatan orang dari folder atau berkas .zip."""
         sumber = Path(sumber)
@@ -280,3 +309,49 @@ def ukuran_tema(dir_tema: Path) -> str:
     except (OSError, yaml.YAMLError):
         return ""
     return str((data.get("display") or {}).get("DISPLAY_SIZE", '3.5"'))
+
+
+def hapus_tema_ukuran_lain(ukuran: str, akar: Path | None = None,
+                           lindungi=(), kering: bool = False) -> list[str]:
+    """Buang tema bawaan yang ukuran layarnya bukan `ukuran`.
+
+    Dari 74 tema bawaan upstream cuma 5 yang dibuat untuk layar 2.1"; sisanya
+    cuma menuh-menuhi daftar dan tata letaknya melenceng kalau dipasang.
+    Menyaringnya di antarmuka saja tidak cukup kalau yang diinginkan daftar
+    yang benar-benar bersih.
+
+    Yang **tidak pernah** disentuh, masing-masing ada ujinya:
+
+    * apa pun yang bukan direktori — `res/themes` juga memuat `default.yaml`
+      (berisi bagian wajib yang ditempelkan ke **semua** tema, jadi
+      menghapusnya merusak semuanya), `theme_example.yaml`, `README.md`,
+      `themes.md`, dan `scale_theme.py`;
+    * symlink, karena itu tema buatan sendiri yang tinggal di direktori data;
+    * nama yang didaftarkan di `lindungi`, dipakai untuk tema yang sedang
+      terpasang — menghapusnya bikin service gagal memuat;
+    * direktori tanpa `theme.yaml`, karena itu bukan tema dan ukurannya tidak
+      bisa dibaca.
+
+    Hasilnya nama-nama yang dihapus. Dengan `kering=True` tidak ada yang
+    dihapus, cuma didaftar — dipakai untuk memperlihatkan dulu apa yang akan
+    kena.
+    """
+    akar = Path(akar) if akar else lk.DIR_UPSTREAM / "res/themes"
+    if not akar.is_dir():
+        raise GalatTema(f"{akar} tidak ada")
+    aman = {n for n in lindungi if n}
+
+    kena = []
+    for anak in sorted(akar.iterdir(), key=lambda p: p.name.casefold()):
+        if anak.is_symlink() or not anak.is_dir():
+            continue
+        if anak.name in aman:
+            continue
+        if not (anak / BERKAS_WAJIB).is_file():
+            continue
+        if ukuran_tema(anak) == ukuran:
+            continue
+        kena.append(anak.name)
+        if not kering:
+            shutil.rmtree(anak)
+    return kena

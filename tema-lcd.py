@@ -17,9 +17,13 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import editor_tataletak as et  # noqa: E402
 import lcd_gif as lg  # noqa: E402
 import lcd_konfig as lk  # noqa: E402
+import lcd_tataletak as ltl  # noqa: E402
 import lcd_tema as lt  # noqa: E402
+
+from PIL import Image  # noqa: E402
 
 # Ukuran layar yang dipakai menyaring tema. Panel AIO ini 2.1"; tema ukuran
 # lain tetap mau dimuat upstream, tapi tata letaknya melenceng — jadi
@@ -124,6 +128,7 @@ class Jendela(Adw.ApplicationWindow):
         menu = Gio.Menu()
         bagian_buat = Gio.Menu()
         bagian_buat.append("Bikin dari gambar…", "win.bikin")
+        bagian_buat.append("Sunting tata letak…", "win.sunting")
         bagian_buat.append("Duplikat tema terpilih…", "win.duplikat")
         menu.append_section(None, bagian_buat)
         bagian_impor = Gio.Menu()
@@ -135,6 +140,7 @@ class Jendela(Adw.ApplicationWindow):
         menu.append_section(None, bagian_gif)
         bagian_hapus = Gio.Menu()
         bagian_hapus.append("Hapus tema terpilih…", "win.hapus")
+        bagian_hapus.append("Bersihkan tema ukuran lain…", "win.bersihkan")
         menu.append_section(None, bagian_hapus)
 
         self.tombol_tambah = Gtk.MenuButton(icon_name="list-add-symbolic", menu_model=menu)
@@ -301,10 +307,12 @@ class Jendela(Adw.ApplicationWindow):
         self.aksi = {}
         for nama, fungsi in (
             ("bikin", self.on_bikin),
+            ("sunting", self.on_sunting),
             ("duplikat", self.on_duplikat),
             ("impor-folder", self.on_impor_folder),
             ("impor-zip", self.on_impor_zip),
             ("hapus", self.on_hapus),
+            ("bersihkan", self.on_bersihkan),
             ("putar-gif", self.on_putar_gif),
         ):
             a = Gio.SimpleAction.new(nama, None)
@@ -318,8 +326,14 @@ class Jendela(Adw.ApplicationWindow):
         # pemutar — mengubah tema saat itu tidak akan kelihatan.
         bebas = not self.sedang_terapkan and not self.gif_berjalan
         ada = kartu is not None
-        self.aksi["bikin"].set_enabled(bebas and ada)
+        self.aksi["bikin"].set_enabled(bebas)
+        # Sengaja tetap bisa diklik untuk tema buatan sendiri yang ternyata
+        # tidak bisa dibuka editor: menu yang mati tanpa keterangan bikin orang
+        # menebak-nebak, sedangkan pesan singkat waktu diklik menjelaskan
+        # sebabnya sekaligus menawarkan jalan keluarnya.
+        self.aksi["sunting"].set_enabled(bebas and ada and kartu.milik_pengguna)
         self.aksi["duplikat"].set_enabled(bebas and ada)
+        self.aksi["bersihkan"].set_enabled(bebas)
         self.aksi["impor-folder"].set_enabled(bebas)
         self.aksi["impor-zip"].set_enabled(bebas)
         self.aksi["putar-gif"].set_enabled(bebas)
@@ -363,10 +377,12 @@ class Jendela(Adw.ApplicationWindow):
         return saring, daftar
 
     def on_bikin(self, *_):
-        kartu = self._kartu_terpilih()
-        if kartu is None:
-            return
-        donor = kartu.tema.nama
+        """Gambar dipilih dulu, lalu tata letaknya disetel, namanya belakangan.
+
+        Nama ditanyakan setelah editor ditutup, bukan sebelumnya: menyetel tata
+        letak butuh waktu dan kadang berakhir dibatalkan, dan menagih nama di
+        depan membuat pembatalan itu terasa seperti pekerjaan yang terbuang.
+        """
         dialog = Gtk.FileDialog(title="Pilih gambar untuk jadi latar")
         saring, daftar = self._saringan(
             "Gambar", "image/png", "image/jpeg", "image/webp", "image/bmp", "image/gif"
@@ -379,17 +395,123 @@ class Jendela(Adw.ApplicationWindow):
                 berkas = d.open_finish(hasil)
             except GLib.Error:
                 return  # dibatalkan
-            jalur = Path(berkas.get_path())
+            self._editor_baru(Path(berkas.get_path()))
+
+        dialog.open(self, None, selesai)
+
+    def _editor_baru(self, gambar: Path):
+        try:
+            latar = lt.muat_dan_pas(gambar, ltl.KANVAS_BAKU)
+        except (OSError, ValueError) as galat:
+            self._toast(f"Tidak bisa membaca gambar: {galat}")
+            return
+
+        # Warna bawaan dipilih menurut terang-gelapnya foto. Tanpa itu, foto
+        # pantai yang terang mendapat angka putih yang praktis tak terlihat,
+        # dan kesan pertamanya seolah temanya rusak.
+        tata = ltl.contoh("grid", warna=ltl.warna_kontras(latar))
+
+        def simpan(hasil):
             self._tanya_nama(
-                "Nama tema baru", jalur.stem[:40], "Buat",
+                "Nama tema baru", gambar.stem[:40], "Buat",
                 lambda nama: self._jalankan(
-                    lambda: self.pustaka.buat_dari_gambar(jalur, nama, donor=donor),
+                    lambda: self.pustaka.buat_dari_tata_letak(gambar, nama, hasil),
                     nama,
-                    f"Tema {nama} dibuat — tata letak dari {donor}",
+                    f"Tema {nama} dibuat",
                 ),
             )
 
-        dialog.open(self, None, selesai)
+        et.Editor(self, latar, tata, f"Tata letak untuk {gambar.name}",
+                  "Simpan tema…", simpan).present()
+
+    def on_sunting(self, *_):
+        kartu = self._kartu_terpilih()
+        if kartu is None or not kartu.milik_pengguna:
+            return
+        nama = kartu.tema.nama
+        dir_tema = self.pustaka.jalur(nama)
+        try:
+            tata = ltl.baca_tema(dir_tema)
+            latar = Image.open(dir_tema / "background.png")
+            latar.load()
+            if latar.size != tata.kanvas:
+                # Tema impor bisa saja punya latar yang ukurannya tidak sama
+                # dengan yang ditulis di theme.yaml. Kalau dibiarkan, pratinjau
+                # digambar seukuran berkasnya sementara batas seret dan
+                # peringatan keluar-layar memakai ukuran yang tertulis — dua
+                # ukuran berbeda di satu kanvas. Yang dimenangkan yang tertulis,
+                # karena itu yang dipakai upstream menata letaknya.
+                latar = lt.pas_ke(latar, tata.kanvas)
+        except ltl.GalatTataLetak as galat:
+            # Tema hasil duplikat atau impor bisa memuat grafik, radial, dan
+            # bagian lain yang tidak dimodelkan editor. Menyimpannya akan
+            # membuang semua itu diam-diam, jadi ditolak — tapi dengan menyebut
+            # apa yang tidak dikenali, supaya penolakannya bisa dimengerti dan
+            # bukan sekadar "tidak bisa".
+            self._toast(f"{nama}: {galat}")
+            return
+        except (OSError, ValueError) as galat:
+            self._toast(f"Tidak bisa membuka {nama}: {galat}")
+            return
+
+        def simpan(hasil):
+            try:
+                ltl.tulis_tema(dir_tema, hasil)
+            except OSError as galat:
+                self._toast(f"Gagal menyimpan: {galat}")
+                return
+            self.tema_dipilih = nama
+            self._muat_tema()
+            if nama == self.tema_terpasang:
+                # Tema ini yang sedang tampil, dan panel membaca theme.yaml
+                # cuma waktu service dinyalakan — tanpa restart, yang terlihat
+                # di layar masih tata letak yang lama.
+                self._toast(f"{nama} disimpan — menyalakan ulang layar…")
+                self._kunci(True, "menyalakan ulang layar…")
+                threading.Thread(target=self._kerja_restart, daemon=True).start()
+            else:
+                self._toast(f"Tata letak {nama} disimpan")
+
+        et.Editor(self, latar, tata, f"Tata letak {nama}", "Simpan", simpan).present()
+
+    def on_bersihkan(self, *_):
+        try:
+            kena = lt.hapus_tema_ukuran_lain(
+                UKURAN_LAYAR, lindungi={self.tema_terpasang}, kering=True)
+        except lt.GalatTema as galat:
+            self._toast(str(galat))
+            return
+        if not kena:
+            self._toast(f"Semua tema bawaan sudah {UKURAN_LAYAR}")
+            return
+
+        dialog = Adw.AlertDialog(
+            heading=f"Hapus {len(kena)} tema bawaan?",
+            body=f"Yang tersisa cuma tema {UKURAN_LAYAR} dan tema buatan sendiri.\n\n"
+                 "Tema bawaan ini bagian dari klon upstream, jadi bisa dikembalikan "
+                 "dengan `git restore res/themes` di folder itu — dan akan ikut "
+                 "kembali sendiri kalau upstream diperbarui.",
+        )
+        dialog.add_response("batal", "Batal")
+        dialog.add_response("hapus", f"Hapus {len(kena)}")
+        dialog.set_response_appearance("hapus", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("batal")
+        dialog.set_close_response("batal")
+
+        def jawab(_d, resp):
+            if resp != "hapus":
+                return
+            try:
+                dihapus = lt.hapus_tema_ukuran_lain(
+                    UKURAN_LAYAR, lindungi={self.tema_terpasang})
+            except (lt.GalatTema, OSError) as galat:
+                self._toast(str(galat))
+                return
+            self._muat_tema()
+            self._toast(f"{len(dihapus)} tema bawaan dihapus")
+
+        dialog.connect("response", jawab)
+        dialog.present(self)
 
     def on_duplikat(self, *_):
         kartu = self._kartu_terpilih()
