@@ -1,0 +1,38 @@
+[Unit]
+Description=Pemutar GIF layar LCD AIO
+Documentation=https://github.com/Lamiore/aio-lcd
+After=graphical-session.target
+PartOf=graphical-session.target
+
+# Hanya satu proses yang boleh menulis ke port serial panel. Conflicts= yang
+# menjamin itu, bukan kesopanan program: aio-lcd.service dinyalakan otomatis
+# oleh graphical-session.target setiap kali sesi grafis kembali, jadi
+# mematikannya saat memulai GIF saja tidak cukup — di login berikutnya dia
+# hidup lagi sendiri dan keduanya berebut port.
+Conflicts=aio-lcd.service
+
+# Kalau pemutarnya menyerah (berkas GIF hilang, panel tidak terdeteksi),
+# jangan tinggalkan panel tanpa pemilik: kembali ke tema.
+#
+# Ini HARUS berpasangan dengan Restart=no di bawah. Dengan Restart=on-failure
+# ketiganya saling memicu tanpa henti: pemutar gagal -> OnFailure menyalakan
+# monitor -> pemutar dicoba ulang -> Conflicts mematikan monitor -> gagal lagi.
+# Batas percobaan tidak pernah tercapai karena penghentian oleh Conflicts
+# mereset hitungannya. Terukur: 45 kali monitor start/stop dalam ~7 menit
+# sebelum dihentikan paksa.
+OnFailure=aio-lcd.service
+
+[Service]
+Type=simple
+WorkingDirectory=@DIR_APP@
+# Tanpa argumen: pilihan GIF, ukuran, dan latarnya dibaca dari
+# ~/.local/share/aio-lcd/tampilan.json supaya unitnya tidak perlu ditulis
+# ulang tiap ganti GIF.
+ExecStart=@DIR_UPSTREAM@/.venv/bin/python @DIR_APP@/gif_pemutar.py
+# Sengaja tidak mencoba ulang — lihat catatan OnFailure= di atas. Kasus
+# "panel belum bangun saat login" sudah ditangani pemutarnya sendiri, yang
+# menunggu sampai 12 x 3 detik sebelum menyerah.
+Restart=no
+
+[Install]
+WantedBy=graphical-session.target

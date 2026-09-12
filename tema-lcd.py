@@ -245,7 +245,9 @@ class Jendela(Adw.ApplicationWindow):
     def _segarkan_status(self):
         self.gif_berjalan = lk.gif_aktif()
         if self.gif_berjalan:
-            self.spanduk.set_title("GIF sedang diputar — statistik berhenti sementara")
+            self.spanduk.set_title(
+                "GIF sedang diputar, dan akan dimuat lagi tiap login — statistik berhenti"
+            )
             self.spanduk.set_button_label("Hentikan")
             self.spanduk.set_revealed(True)
         elif not lk.service_terpasang():
@@ -533,8 +535,9 @@ class Jendela(Adw.ApplicationWindow):
 
         dialog = Adw.AlertDialog(
             heading=f"Putar {jalur.name}",
-            body="Statistik berhenti selama GIF diputar — cuma satu program "
-                 "yang boleh memakai layarnya.",
+            body="GIF ini juga akan dimuat sendiri tiap login, sampai kamu "
+                 "kembali ke tema. Statistik berhenti selama GIF diputar — "
+                 "cuma satu program yang boleh memakai layarnya.",
         )
         dialog.set_extra_child(kotak)
         dialog.add_response("batal", "Batal")
@@ -546,7 +549,7 @@ class Jendela(Adw.ApplicationWindow):
         def jawab(_d, resp):
             if resp != "putar":
                 return
-            berhasil, pesan = lk.mulai_gif(
+            berhasil, pesan = lk.pakai_mode_gif(
                 jalur, ukuran[pilihan.get_selected()],
                 latar="buram" if isi_sisi.get_active() else "hitam",
             )
@@ -560,7 +563,7 @@ class Jendela(Adw.ApplicationWindow):
         dialog.present(self)
 
     def on_hentikan_gif(self, *_):
-        berhasil, pesan = lk.hentikan_gif()
+        berhasil, pesan = lk.pakai_mode_tema()
         self._toast(pesan)
         if berhasil:
             self._segarkan_status()

@@ -3,6 +3,13 @@ Description=Layar LCD AIO ID-Cooling (Turing Smart Screen 2.1")
 Documentation=https://github.com/mathoudebine/turing-smart-screen-python
 After=graphical-session.target
 PartOf=graphical-session.target
+
+# Saling kunci dengan pemutar GIF: keduanya menulis ke port serial yang sama,
+# dan unit ini ikut menyala tiap kali sesi grafis kembali. Tanpa baris ini,
+# login sesudah GIF diputar akan menghidupkan dua penulis sekaligus — panel
+# lalu berhenti menggambar dan jurnalnya penuh
+# "device reports readiness to read but returned no data".
+Conflicts=aio-lcd-gif.service
 # Izin ke port serial lewat ACL uaccess baru ada setelah sesi lokal aktif,
 # dan layar butuh beberapa detik untuk bangun setelah boot. Jangan batasi
 # jumlah percobaan ulang, biarkan Restart= yang mengurus.

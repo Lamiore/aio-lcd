@@ -228,12 +228,46 @@ Terukur pada GIF 10 fps yang berubah 55% tiap bingkai, di 480×480:
 ditampilkan aplikasi sengaja dibuat lebih rendah dari kenyataan supaya tidak
 pernah menjanjikan lebih dari yang bisa ditepati.
 
-Aplikasi menjalankannya sebagai unit sementara (`systemd-run --user`), bukan
-subprocess biasa, supaya statusnya tetap terbaca `systemctl` walau aplikasinya
-ditutup. `ExecStopPost` pada unit itu menyalakan kembali service monitor —
-bukan sekadar bergantung pada blok `finally` pemutar, karena pustaka upstream
-memanggil `os._exit(0)` kalau panel gagal dibuka, dan itu **melewati**
-`finally`.
+### GIF yang dipilih dimuat lagi setiap login
+
+Pilihannya disimpan di `~/.local/share/aio-lcd/tampilan.json`, dan pemutarnya
+punya unit systemd sendiri yang **di-enable** saat kamu memilih GIF. Hanya unit
+yang enabled yang menyala saat login — itulah yang bikin GIF-nya kembali
+sendiri. Menekan "Hentikan" mengembalikan modenya ke tema, juga permanen.
+
+### Hanya satu dari dua unit yang boleh hidup
+
+`aio-lcd.service` dan `aio-lcd-gif.service` menulis ke port serial yang sama.
+Yang menjamin cuma satu yang hidup adalah **`Conflicts=` pada keduanya**, bukan
+kesopanan program.
+
+Ini bukan kehati-hatian berlebihan — ini pernah terjadi. `aio-lcd.service` ikut
+`graphical-session.target`, jadi dia menyala **setiap kali sesi grafis
+kembali**. Menghentikannya saat memulai GIF saja tidak cukup: di login
+berikutnya dia hidup lagi sendiri, berdampingan dengan pemutar GIF yang masih
+jalan. Dua penulis di satu port, dan gejalanya menyesatkan — panel berhenti
+memperbarui angka (suhu dkk. seperti hilang dari tema) sementara jurnalnya
+penuh `device reports readiness to read but returned no data`.
+
+Karena itu modenya disimpan sebagai **unit mana yang enabled**, bukan sekadar
+unit mana yang sedang jalan.
+
+### Jangan pasangkan `Restart=on-failure` dengan `OnFailure=` di sini
+
+Unit GIF memakai `OnFailure=aio-lcd.service` supaya panel tidak tertinggal
+tanpa pemilik kalau GIF-nya gagal dimuat. Kombinasi itu **wajib** berpasangan
+dengan `Restart=no`. Dengan `Restart=on-failure`, ketiganya saling memicu tanpa
+henti:
+
+```
+pemutar gagal → OnFailure menyalakan monitor → pemutar dicoba ulang
+              → Conflicts mematikan monitor → pemutar gagal lagi → ...
+```
+
+Batas percobaan (`StartLimitBurst`) tidak pernah tercapai karena penghentian
+oleh `Conflicts` mereset hitungannya. Terukur saat menguji jalur gagalnya:
+**45 kali monitor start/stop dalam ~7 menit** sebelum dihentikan paksa.
+`uji_unit_systemd.py` menjaga kombinasi ini supaya tidak kembali.
 
 Kalau suatu saat GIF berhenti tapi statistiknya tidak kembali:
 
@@ -301,11 +335,11 @@ dengan tangan.
 | `lcd_tema.py` | pembuatan tema, impor, symlink, penghapusan |
 | `lcd_gif.py` | pembacaan bingkai GIF, perkiraan fps |
 | `gif_pemutar.py` | pemutar GIF — jalan dengan venv upstream |
-| `uji_*.py` | 84 uji — `for f in uji_*.py; do python3 $f; done` |
+| `uji_*.py` | 102 uji — `for f in uji_*.py; do python3 $f; done` |
 | `pasang.sh` | pemasang, aman dijalankan berulang |
 | `config/config.yaml` | konfigurasi upstream yang sudah disetel |
 | `udev/` | aturan izin port serial |
-| `systemd/`, `desktop/` | templat unit autostart & peluncur |
+| `systemd/`, `desktop/` | templat dua unit autostart & peluncur |
 
 `lcd_konfig.py` sengaja tidak memakai `ruamel.yaml` walaupun upstream memakainya:
 Python sistem tidak menyediakannya, dan penyuntingan baris bertarget menjaga

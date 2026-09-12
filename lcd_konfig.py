@@ -9,6 +9,7 @@ aplikasinya jalan tanpa dependensi di luar bawaan sistem.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -27,12 +28,29 @@ DIR_UPSTREAM = Path(
     )
 ).expanduser()
 
+DIR_DATA = Path(
+    os.environ.get("AIO_LCD_DATA", Path.home() / ".local/share/aio-lcd")
+).expanduser()
+
+# Apa yang harus ditampilkan panel saat sesi menyala. Disimpan di berkas
+# karena harus bertahan melewati logout: unit systemd yang menyala saat login
+# membacanya untuk tahu mode mana yang berlaku.
+BERKAS_TAMPILAN = DIR_DATA / "tampilan.json"
+
+TAMPILAN_BAKU = {
+    "mode": "tema",      # "tema" atau "gif"
+    "gif": "",
+    "ukuran": 240,
+    "latar": "buram",
+    "kecerahan": 20,
+}
+
 NAMA_SERVICE = os.environ.get("AIO_LCD_SERVICE", "aio-lcd.service")
 
-# Pemutar GIF jalan sebagai unit sementara (systemd-run), bukan unit terpasang:
-# argumennya berubah tiap kali diputar, dan statusnya tetap bisa dibaca
-# systemctl — beda dengan subprocess biasa yang hilang jejak begitu aplikasinya
-# ditutup.
+# Pemutar GIF punya unit terpasang sendiri, bukan unit sementara. Sebabnya
+# harus bisa `enabled`: hanya unit yang enabled yang ikut menyala saat login,
+# dan itu satu-satunya cara GIF tetap tampil setelah logout. Pilihan GIF-nya
+# dibaca dari BERKAS_TAMPILAN, bukan dari argumen, supaya unitnya tetap.
 NAMA_SERVICE_GIF = os.environ.get("AIO_LCD_SERVICE_GIF", "aio-lcd-gif.service")
 
 # Penanda di log yang berarti layar sudah benar-benar digambar ulang, bukan
@@ -235,8 +253,82 @@ def _invocation_id() -> str:
     return _systemctl("show", NAMA_SERVICE, "-p", "InvocationID", "--value").stdout.strip()
 
 
+def baca_tampilan() -> dict:
+    """Pilihan tampilan yang tersimpan, dilengkapi nilai baku."""
+    data = dict(TAMPILAN_BAKU)
+    try:
+        tersimpan = json.loads(BERKAS_TAMPILAN.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return data
+    if isinstance(tersimpan, dict):
+        data.update({k: v for k, v in tersimpan.items() if k in TAMPILAN_BAKU})
+    if data["mode"] not in ("tema", "gif"):
+        data["mode"] = "tema"
+    return data
+
+
+def tulis_tampilan(**ubah) -> dict:
+    data = baca_tampilan()
+    data.update({k: v for k, v in ubah.items() if k in TAMPILAN_BAKU})
+    BERKAS_TAMPILAN.parent.mkdir(parents=True, exist_ok=True)
+    sementara = BERKAS_TAMPILAN.with_suffix(".baru")
+    sementara.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    os.replace(sementara, BERKAS_TAMPILAN)
+    return data
+
+
 def gif_aktif() -> bool:
     return service_keadaan(NAMA_SERVICE_GIF) == "active"
+
+
+def gif_terpasang() -> bool:
+    return _systemctl("cat", NAMA_SERVICE_GIF).returncode == 0
+
+
+def mode_sekarang() -> str:
+    return baca_tampilan()["mode"]
+
+
+def pakai_mode_gif(jalur_gif, ukuran: int, latar: str = "buram",
+                   kecerahan: int = 20) -> tuple[bool, str]:
+    """Jadikan GIF yang tampil, sekarang dan setiap login berikutnya.
+
+    Dua unit tidak boleh hidup bersamaan — keduanya menulis ke port serial yang
+    sama. Yang menjamin itu `Conflicts=` di unitnya, bukan kesopanan program:
+    `aio-lcd.service` dinyalakan otomatis oleh `graphical-session.target` tiap
+    kali sesi grafis kembali, jadi mematikannya dari sini saja tidak cukup —
+    dia akan hidup lagi sendiri di login berikutnya dan berebut port.
+
+    Karena itu modenya juga disimpan sebagai unit mana yang `enabled`, bukan
+    sekadar unit mana yang sedang jalan.
+    """
+    jalur = Path(jalur_gif).expanduser()
+    if not jalur.is_file():
+        return False, f"{jalur} tidak ada"
+    if not gif_terpasang():
+        return False, f"{NAMA_SERVICE_GIF} belum terpasang — jalankan ./pasang.sh"
+
+    tulis_tampilan(mode="gif", gif=str(jalur), ukuran=int(ukuran),
+                   latar=latar, kecerahan=int(kecerahan))
+
+    _systemctl("disable", NAMA_SERVICE)
+    hasil = _systemctl("enable", "--now", NAMA_SERVICE_GIF)
+    if hasil.returncode != 0:
+        # Jangan tinggalkan panel tanpa pemilik kalau pemutarnya gagal menyala.
+        pakai_mode_tema()
+        return False, (hasil.stderr or hasil.stdout).strip() or "gagal menyalakan pemutar"
+    return True, "GIF diputar, dan akan dimuat sendiri tiap login"
+
+
+def pakai_mode_tema() -> tuple[bool, str]:
+    """Kembali menampilkan tema, sekarang dan setiap login berikutnya."""
+    tulis_tampilan(mode="tema")
+    if gif_terpasang():
+        _systemctl("disable", "--now", NAMA_SERVICE_GIF)
+    hasil = _systemctl("enable", "--now", NAMA_SERVICE)
+    if hasil.returncode != 0:
+        return False, (hasil.stderr or hasil.stdout).strip() or "gagal menyalakan monitor"
+    return True, "Kembali ke tema"
 
 
 def pid_pemutar_gif() -> int:
@@ -249,47 +341,6 @@ def pid_pemutar_gif() -> int:
     """
     keluaran = _systemctl("show", NAMA_SERVICE_GIF, "-p", "MainPID", "--value").stdout.strip()
     return int(keluaran) if keluaran.isdigit() else 0
-
-
-def mulai_gif(jalur_gif, ukuran: int, kecerahan: int = 20, latar: str = "buram") -> tuple[bool, str]:
-    """Putar GIF sebagai unit sementara.
-
-    `ExecStopPost` sengaja dipasang di unitnya, bukan cuma diandalkan pada blok
-    `finally` pemutar: kalau panel gagal dibuka, pustaka upstream memanggil
-    `os._exit(0)` yang melewati `finally`, dan service monitor tidak akan
-    pernah dinyalakan kembali. Unit yang mengurusnya menutup celah itu.
-    """
-    if gif_aktif():
-        return False, "GIF sedang diputar"
-    python_venv = DIR_UPSTREAM / ".venv/bin/python"
-    if not python_venv.is_file():
-        return False, f"venv upstream tidak ada di {python_venv}"
-    pemutar = Path(__file__).resolve().parent / "gif_pemutar.py"
-
-    hasil = subprocess.run(
-        [
-            "systemd-run", "--user", f"--unit={NAMA_SERVICE_GIF}", "--collect",
-            f"--description=Pemutar GIF layar LCD AIO",
-            f"--property=ExecStopPost=/usr/bin/systemctl --user start {NAMA_SERVICE}",
-            str(python_venv), str(pemutar),
-            "--gif", str(jalur_gif),
-            "--ukuran", str(ukuran),
-            "--kecerahan", str(kecerahan),
-            "--latar", latar,
-        ],
-        capture_output=True, text=True, check=False,
-    )
-    if hasil.returncode != 0:
-        return False, (hasil.stderr or hasil.stdout).strip() or "gagal menjalankan pemutar"
-    return True, "GIF mulai diputar"
-
-
-def hentikan_gif() -> tuple[bool, str]:
-    """Hentikan pemutar; monitor dinyalakan lagi oleh pemutar dan ExecStopPost."""
-    hasil = _systemctl("stop", NAMA_SERVICE_GIF)
-    if hasil.returncode != 0:
-        return False, (hasil.stderr or hasil.stdout).strip() or "gagal menghentikan"
-    return True, "GIF dihentikan"
 
 
 def restart_service(batas_detik: float = 90.0) -> tuple[bool, str]:

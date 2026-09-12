@@ -11,6 +11,7 @@ DIR_APP="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIR_UPSTREAM="${AIO_LCD_UPSTREAM:-$HOME/workspace/projects/turing-smart-screen-python}"
 ASAL_UPSTREAM="https://github.com/mathoudebine/turing-smart-screen-python.git"
 SERVICE=aio-lcd.service
+SERVICE_GIF=aio-lcd-gif.service
 
 info() { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 oke()  { printf '    \033[32m✓\033[0m %s\n' "$*"; }
@@ -75,11 +76,29 @@ fi
 # ---------------------------------------------------------------- 5. service
 info "Pasang service autostart"
 mkdir -p "$HOME/.config/systemd/user"
-sed "s|@DIR_UPSTREAM@|$DIR_UPSTREAM|g" \
-  "$DIR_APP/systemd/$SERVICE.in" > "$HOME/.config/systemd/user/$SERVICE"
+for unit in "$SERVICE" "$SERVICE_GIF"; do
+  sed -e "s|@DIR_UPSTREAM@|$DIR_UPSTREAM|g" -e "s|@DIR_APP@|$DIR_APP|g" \
+    "$DIR_APP/systemd/$unit.in" > "$HOME/.config/systemd/user/$unit"
+done
 systemctl --user daemon-reload
-systemctl --user enable --now "$SERVICE"
-oke "$SERVICE aktif & enabled"
+
+# Persis satu dari dua unit ini yang boleh enabled: keduanya menulis ke port
+# serial yang sama, dan yang enabled itulah yang menyala saat login. Mode yang
+# tersimpan menentukan siapa.
+MODE=$(python3 -c "
+import sys; sys.path.insert(0, '$DIR_APP')
+import lcd_konfig; print(lcd_konfig.baca_tampilan()['mode'])
+" 2>/dev/null || echo tema)
+
+if [ "$MODE" = "gif" ]; then
+  systemctl --user disable "$SERVICE" >/dev/null 2>&1 || true
+  systemctl --user enable --now "$SERVICE_GIF"
+  oke "$SERVICE_GIF aktif & enabled (mode GIF tersimpan)"
+else
+  systemctl --user disable --now "$SERVICE_GIF" >/dev/null 2>&1 || true
+  systemctl --user enable --now "$SERVICE"
+  oke "$SERVICE aktif & enabled"
+fi
 
 # ---------------------------------------------------------------- 6. desktop
 info "Pasang peluncur aplikasi"

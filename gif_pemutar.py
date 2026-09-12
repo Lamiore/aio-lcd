@@ -52,6 +52,16 @@ def systemctl(*argumen: str) -> subprocess.CompletedProcess:
     )
 
 
+def dijalankan_systemd() -> bool:
+    """Apakah proses ini memang unit pemutar yang sedang aktif.
+
+    Pembandingnya PID, bukan variabel INVOCATION_ID: variabel itu diwariskan
+    dari unit systemd yang menaungi terminal atau aplikasi pemanggil, jadi
+    hampir selalu terisi dan tidak membuktikan apa pun.
+    """
+    return lk.gif_aktif() and lk.pid_pemutar_gif() == os.getpid()
+
+
 def hentikan_monitor(batas: float = 30.0) -> bool:
     """Matikan service monitor dan tunggu sampai benar-benar lepas.
 
@@ -177,16 +187,35 @@ def putar(lcd: LcdCommRevC, bingkai: list[lg.Bingkai], ukuran: int, ulang: int) 
 
 
 def main() -> int:
+    tersimpan = lk.baca_tampilan()
     p = argparse.ArgumentParser(description="Putar GIF di layar LCD AIO")
-    p.add_argument("--gif", required=True, type=Path, help="berkas GIF (atau gambar diam)")
-    p.add_argument("--ukuran", type=int, default=240,
-                   help=f"sisi area tayang; {KANVAS} berarti layar penuh (baku: 240)")
-    p.add_argument("--kecerahan", type=int, default=20, help="0-100 (baku: 20)")
+    # Semua argumen opsional: kalau tidak diberikan, dipakai pilihan tersimpan
+    # di ~/.local/share/aio-lcd/tampilan.json. Itulah cara unit systemd-nya
+    # tahu GIF mana yang harus dimuat saat login tanpa perlu ditulis ulang.
+    p.add_argument("--gif", type=Path, default=None,
+                   help="berkas GIF (baku: yang terakhir dipilih)")
+    p.add_argument("--ukuran", type=int, default=None,
+                   help=f"sisi area tayang; {KANVAS} berarti layar penuh")
+    p.add_argument("--kecerahan", type=int, default=None, help="0-100")
     p.add_argument("--ulang", type=int, default=0, help="jumlah putaran; 0 = terus-menerus")
-    p.add_argument("--latar", choices=("buram", "hitam"), default="buram",
-                   help="isi sisi kosong saat GIF lebih kecil dari layar (baku: buram)")
+    p.add_argument("--latar", choices=("buram", "hitam"), default=None,
+                   help="isi sisi kosong saat GIF lebih kecil dari layar")
     a = p.parse_args()
 
+    if a.gif is None:
+        a.gif = Path(tersimpan["gif"]) if tersimpan["gif"] else None
+    if a.ukuran is None:
+        a.ukuran = int(tersimpan["ukuran"])
+    if a.kecerahan is None:
+        a.kecerahan = int(tersimpan["kecerahan"])
+    if a.latar is None:
+        a.latar = tersimpan["latar"]
+
+    if a.gif is None:
+        print("GAGAL: belum ada GIF tersimpan, dan --gif tidak diberikan.\n"
+              f"       Pilih GIF lewat aplikasi, atau setel di {lk.BERKAS_TAMPILAN}",
+              file=sys.stderr)
+        return 2
     if not a.gif.is_file():
         print(f"GAGAL: {a.gif} tidak ada", file=sys.stderr)
         return 2
@@ -202,7 +231,8 @@ def main() -> int:
     # Pembandingnya PID, bukan variabel INVOCATION_ID: variabel itu diwariskan
     # dari unit systemd yang menaungi terminal/aplikasi pemanggil, jadi hampir
     # selalu terisi dan tidak membuktikan apa pun soal unit pemutar.
-    if lk.gif_aktif() and lk.pid_pemutar_gif() != os.getpid():
+    sebagai_unit = dijalankan_systemd()
+    if lk.gif_aktif() and not sebagai_unit:
         print(f"GAGAL: {lk.NAMA_SERVICE_GIF} sedang memutar GIF lain.\n"
               f"       Hentikan dulu: systemctl --user stop {lk.NAMA_SERVICE_GIF}",
               file=sys.stderr)
@@ -231,7 +261,11 @@ def main() -> int:
           + (f", hemat data {hemat*100:.0f}% (cuma bagian yang berubah)" if hemat > 0.02 else ""),
           flush=True)
 
-    monitor_dimatikan = hentikan_monitor()
+    # Kalau kita dijalankan sebagai unit, systemd sudah menghentikan monitor
+    # lewat Conflicts= dan akan mengurus giliran berikutnya sendiri. Mematikan
+    # atau menyalakannya lagi dari sini justru melawan systemd. Yang perlu
+    # mengurusnya sendiri cuma pemanggilan langsung dari terminal.
+    monitor_dimatikan = False if sebagai_unit else hentikan_monitor()
     lcd = None
     try:
         lcd = sambung_panel()

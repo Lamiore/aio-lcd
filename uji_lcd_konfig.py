@@ -201,5 +201,103 @@ class UjiKeadaanService(unittest.TestCase):
             self.assertFalse(lk.service_selesai_berhenti())
 
 
+class UjiTampilanTersimpan(unittest.TestCase):
+    """Mode tampilan harus bertahan melewati logout — itu inti perbaikannya."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.asli = lk.BERKAS_TAMPILAN
+        lk.BERKAS_TAMPILAN = Path(self.dir.name) / "tampilan.json"
+
+    def tearDown(self):
+        lk.BERKAS_TAMPILAN = self.asli
+        self.dir.cleanup()
+
+    def test_baku_kalau_belum_ada_berkas(self):
+        d = lk.baca_tampilan()
+        self.assertEqual(d["mode"], "tema")
+        self.assertEqual(d, lk.TAMPILAN_BAKU)
+
+    def test_tulis_lalu_baca(self):
+        lk.tulis_tampilan(mode="gif", gif="/x/y.gif", ukuran=360)
+        d = lk.baca_tampilan()
+        self.assertEqual((d["mode"], d["gif"], d["ukuran"]), ("gif", "/x/y.gif", 360))
+        # Kunci yang tidak disebut tetap memakai nilai baku.
+        self.assertEqual(d["latar"], lk.TAMPILAN_BAKU["latar"])
+
+    def test_kunci_asing_diabaikan(self):
+        lk.tulis_tampilan(mode="gif")
+        lk.BERKAS_TAMPILAN.write_text('{"mode": "gif", "jahat": 1}')
+        self.assertNotIn("jahat", lk.baca_tampilan())
+
+    def test_mode_tak_dikenal_jatuh_ke_tema(self):
+        lk.BERKAS_TAMPILAN.write_text('{"mode": "entah"}')
+        self.assertEqual(lk.baca_tampilan()["mode"], "tema")
+
+    def test_berkas_rusak_tidak_bikin_galat(self):
+        lk.BERKAS_TAMPILAN.write_text("{ ini bukan json")
+        self.assertEqual(lk.baca_tampilan()["mode"], "tema")
+
+    def test_tidak_meninggalkan_berkas_sementara(self):
+        lk.tulis_tampilan(mode="gif")
+        sisa = sorted(p.name for p in Path(self.dir.name).iterdir())
+        self.assertEqual(sisa, ["tampilan.json"], f"ada sisa: {sisa}")
+
+
+class UjiPindahMode(unittest.TestCase):
+    """Yang dijaga: unit mana yang di-enable, bukan cuma yang sedang jalan.
+
+    Hanya unit yang enabled yang menyala saat login, dan cuma satu proses boleh
+    memegang port serial — jadi salah enable berarti dua penulis di login
+    berikutnya.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.asli = lk.BERKAS_TAMPILAN
+        lk.BERKAS_TAMPILAN = Path(self.dir.name) / "tampilan.json"
+        self.gif = Path(self.dir.name) / "a.gif"
+        self.gif.write_bytes(b"GIF89a")
+        self.perintah = []
+
+    def tearDown(self):
+        lk.BERKAS_TAMPILAN = self.asli
+        self.dir.cleanup()
+
+    def _rekam(self):
+        import subprocess
+        from unittest import mock
+
+        def palsu(*argumen):
+            self.perintah.append(argumen)
+            keluaran = "active" if argumen[0] == "is-active" else ""
+            return subprocess.CompletedProcess([], 0, stdout=keluaran, stderr="")
+
+        return mock.patch.object(lk, "_systemctl", side_effect=palsu)
+
+    def test_mode_gif_enable_gif_dan_disable_tema(self):
+        with self._rekam():
+            berhasil, _ = lk.pakai_mode_gif(self.gif, 240)
+        self.assertTrue(berhasil)
+        self.assertIn(("disable", lk.NAMA_SERVICE), self.perintah)
+        self.assertIn(("enable", "--now", lk.NAMA_SERVICE_GIF), self.perintah)
+        self.assertEqual(lk.baca_tampilan()["mode"], "gif")
+
+    def test_mode_tema_disable_gif_dan_enable_tema(self):
+        with self._rekam():
+            berhasil, _ = lk.pakai_mode_tema()
+        self.assertTrue(berhasil)
+        self.assertIn(("disable", "--now", lk.NAMA_SERVICE_GIF), self.perintah)
+        self.assertIn(("enable", "--now", lk.NAMA_SERVICE), self.perintah)
+        self.assertEqual(lk.baca_tampilan()["mode"], "tema")
+
+    def test_gif_tidak_ada_ditolak_tanpa_mengubah_mode(self):
+        with self._rekam():
+            berhasil, pesan = lk.pakai_mode_gif(Path("/tidak/ada.gif"), 240)
+        self.assertFalse(berhasil)
+        self.assertEqual(self.perintah, [], "seharusnya belum menyentuh systemctl")
+        self.assertEqual(lk.baca_tampilan()["mode"], "tema")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
