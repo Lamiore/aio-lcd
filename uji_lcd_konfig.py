@@ -172,5 +172,34 @@ class UjiDaftarTema(unittest.TestCase):
         self.assertEqual(lk.daftar_tema(dir_tema=self.akar / "hantu"), [])
 
 
+class UjiKeadaanService(unittest.TestCase):
+    """Perbedaan 'bukan active' vs 'sudah berhenti' — sumber galat rebutan port."""
+
+    def _dengan(self, keadaan):
+        import subprocess
+        from unittest import mock
+        hasil = subprocess.CompletedProcess([], 0, stdout=keadaan + "\n", stderr="")
+        return mock.patch.object(lk, "_systemctl", return_value=hasil)
+
+    def test_peralihan_bukan_berarti_sudah_berhenti(self):
+        for keadaan in ("deactivating", "activating"):
+            with self._dengan(keadaan):
+                self.assertFalse(lk.service_aktif(), keadaan)
+                self.assertFalse(
+                    lk.service_selesai_berhenti(),
+                    f"{keadaan} dianggap sudah berhenti — pemutar akan menyambar port",
+                )
+
+    def test_inactive_dan_failed_berarti_sudah_berhenti(self):
+        for keadaan in ("inactive", "failed"):
+            with self._dengan(keadaan):
+                self.assertTrue(lk.service_selesai_berhenti(), keadaan)
+
+    def test_active(self):
+        with self._dengan("active"):
+            self.assertTrue(lk.service_aktif())
+            self.assertFalse(lk.service_selesai_berhenti())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

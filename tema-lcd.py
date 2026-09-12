@@ -510,9 +510,13 @@ class Jendela(Adw.ApplicationWindow):
                 return
             garis = (f"{r['jumlah_bingkai']} bingkai · GIF minta "
                      f"{r['fps_diminta']:.1f} fps · panel sanggup ~{r['fps_sanggup']:.1f} fps")
+            if r["rasio_berubah"] < 0.9:
+                garis += (f"\nCuma {r['rasio_berubah']*100:.0f}% layar yang berubah tiap "
+                          "bingkai, jadi yang dikirim cuma bagian itu — makanya sanggupnya "
+                          "jauh di atas batas layar penuh.")
             if not r["mulus"]:
-                garis += ("\nAkan diputar lebih lambat dari aslinya. Pilih ukuran "
-                          "lebih kecil kalau mau mulus — fps naik sebanding luas area.")
+                garis += ("\nAkan diputar lebih lambat dari aslinya. Pilih ukuran lebih "
+                          "kecil kalau mau mulus — fps naik sebanding luas area.")
             keterangan.set_text(garis)
 
         pilihan.connect("notify::selected", segarkan)

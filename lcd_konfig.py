@@ -211,8 +211,24 @@ def service_terpasang() -> bool:
     return _systemctl("cat", NAMA_SERVICE).returncode == 0
 
 
+def service_keadaan(nama: str | None = None) -> str:
+    """Keadaan mentah service: active / activating / deactivating / inactive / failed.
+
+    Dipakai kalau yang penting bukan sekadar 'aktif atau tidak'. `activating`
+    dan `deactivating` adalah keadaan peralihan di mana prosesnya masih hidup
+    dan port serialnya masih dipegang — memperlakukannya sama dengan `inactive`
+    bikin pemutar GIF menyambar port yang belum dilepas.
+    """
+    return _systemctl("is-active", nama or NAMA_SERVICE).stdout.strip() or "unknown"
+
+
 def service_aktif() -> bool:
-    return _systemctl("is-active", NAMA_SERVICE).stdout.strip() == "active"
+    return service_keadaan() == "active"
+
+
+def service_selesai_berhenti() -> bool:
+    """True cuma kalau service benar-benar sudah berhenti, bukan sedang berhenti."""
+    return service_keadaan() in {"inactive", "failed", "unknown"}
 
 
 def _invocation_id() -> str:
@@ -220,7 +236,19 @@ def _invocation_id() -> str:
 
 
 def gif_aktif() -> bool:
-    return _systemctl("is-active", NAMA_SERVICE_GIF).stdout.strip() == "active"
+    return service_keadaan(NAMA_SERVICE_GIF) == "active"
+
+
+def pid_pemutar_gif() -> int:
+    """PID proses utama unit pemutar, 0 kalau tidak jalan.
+
+    Dipakai pemutar untuk tahu apakah unit yang aktif itu dirinya sendiri.
+    Jangan pakai variabel lingkungan INVOCATION_ID untuk itu: variabel itu
+    diwariskan dari unit systemd yang menaungi terminal atau aplikasi
+    pemanggil, jadi hampir selalu terisi dan tidak membuktikan apa pun.
+    """
+    keluaran = _systemctl("show", NAMA_SERVICE_GIF, "-p", "MainPID", "--value").stdout.strip()
+    return int(keluaran) if keluaran.isdigit() else 0
 
 
 def mulai_gif(jalur_gif, ukuran: int, kecerahan: int = 20) -> tuple[bool, str]:

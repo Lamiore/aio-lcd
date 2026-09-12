@@ -15,6 +15,7 @@ systemd menghentikan unit.
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import subprocess
 import sys
@@ -62,7 +63,11 @@ def hentikan_monitor(batas: float = 30.0) -> bool:
     systemctl("stop", lk.NAMA_SERVICE)
     tenggat = time.monotonic() + batas
     while time.monotonic() < tenggat:
-        if not lk.service_aktif():
+        # Harus 'inactive', bukan sekadar 'bukan active': selama 'deactivating'
+        # prosesnya masih hidup dan port serialnya masih dipegang. Menyambar di
+        # situ bikin galat "device reports readiness to read but returned no
+        # data (multiple access on port?)".
+        if lk.service_selesai_berhenti():
             time.sleep(1.0)  # beri waktu port serialnya benar-benar tertutup
             return True
         time.sleep(0.5)
@@ -110,6 +115,12 @@ def putar(lcd: LcdCommRevC, bingkai: list[lg.Bingkai], ukuran: int, ulang: int) 
     pengiriman, bukan di jeda.
     """
     x, y = lg.posisi_tengah(ukuran, KANVAS)
+    perintah = lg.susun_perintah(bingkai, x, y)
+
+    # Bingkai pertama harus utuh: isi layar saat ini tidak diketahui, sedangkan
+    # perintah-perintah berikutnya menganggap bingkai sebelumnya sudah tampil.
+    lcd.DisplayPILImage(bingkai[0].gambar, x, y)
+
     putaran = 0
     terkirim = 0
     waktu_kirim = 0.0
@@ -125,16 +136,17 @@ def putar(lcd: LcdCommRevC, bingkai: list[lg.Bingkai], ukuran: int, ulang: int) 
                   f"kirim {terkirim / waktu_kirim:.1f} fps", flush=True)
 
     while not _berhenti:
-        for b in bingkai:
+        for p in perintah:
             if _berhenti:
                 lapor()
                 return
             mulai = time.monotonic()
-            lcd.DisplayPILImage(b.gambar, x, y)
+            if p.gambar is not None:
+                lcd.DisplayPILImage(p.gambar, p.x, p.y)
             selesai = time.monotonic()
             terkirim += 1
             waktu_kirim += selesai - mulai
-            sisa = b.durasi - (selesai - mulai)
+            sisa = p.durasi - (selesai - mulai)
             if sisa > 0:
                 # Tidur dipecah supaya permintaan berhenti tidak menunggu
                 # bingkai lambat selesai.
@@ -163,6 +175,20 @@ def main() -> int:
         print(f"GAGAL: --ukuran harus 1..{KANVAS}", file=sys.stderr)
         return 2
 
+    # Cuma satu proses yang boleh memegang port serial. Kalau unit pemutar
+    # sudah jalan (dinyalakan dari aplikasi) lalu skrip ini dijalankan lagi
+    # dari terminal, keduanya berebut dan galatnya menyesatkan:
+    # "device reports readiness to read but returned no data".
+    #
+    # Pembandingnya PID, bukan variabel INVOCATION_ID: variabel itu diwariskan
+    # dari unit systemd yang menaungi terminal/aplikasi pemanggil, jadi hampir
+    # selalu terisi dan tidak membuktikan apa pun soal unit pemutar.
+    if lk.gif_aktif() and lk.pid_pemutar_gif() != os.getpid():
+        print(f"GAGAL: {lk.NAMA_SERVICE_GIF} sedang memutar GIF lain.\n"
+              f"       Hentikan dulu: systemctl --user stop {lk.NAMA_SERVICE_GIF}",
+              file=sys.stderr)
+        return 3
+
     signal.signal(signal.SIGTERM, _minta_berhenti)
     signal.signal(signal.SIGINT, _minta_berhenti)
 
@@ -179,8 +205,12 @@ def main() -> int:
 
     sanggup = lg.perkiraan_fps(a.ukuran, a.ukuran)
     diminta = lg.fps_diminta(bingkai)
+    perintah_awal = lg.susun_perintah(bingkai, 0, 0)
+    hemat = lg.hemat(perintah_awal, a.ukuran)
     print(f"{len(bingkai)} bingkai @ {a.ukuran}x{a.ukuran} — "
-          f"diminta {diminta:.1f} fps, sanggup {sanggup:.1f} fps", flush=True)
+          f"diminta {diminta:.1f} fps, sanggup {sanggup:.1f} fps"
+          + (f", hemat data {hemat*100:.0f}% (cuma bagian yang berubah)" if hemat > 0.02 else ""),
+          flush=True)
 
     monitor_dimatikan = hentikan_monitor()
     lcd = None
