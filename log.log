@@ -151,3 +151,18 @@
 09/12/2026 05:03:03 PM [DEBUG] Auto detected COM port: /dev/ttyACM0
 09/12/2026 05:03:03 PM [DEBUG] Display ID returned: chs_5inch.dev1_rom1.89
 09/12/2026 05:03:03 PM [DEBUG] HW sub-revision detected: SubRevision.REV_2INCH, ROM version: 89
+09/12/2026 05:11:39 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 05:11:40 PM [DEBUG] Detected screen turned ON
+09/12/2026 05:11:40 PM [DEBUG] HW revision: C
+09/12/2026 05:11:40 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 05:11:41 PM [DEBUG] Detected screen turned ON
+09/12/2026 05:11:41 PM [WARNING] Cannot find COM port automatically, retrying (1/10)
+09/12/2026 05:11:42 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 05:11:55 PM [DEBUG] Detected screen turned ON
+09/12/2026 05:11:55 PM [DEBUG] Auto detected COM port: /dev/ttyACM0
+09/12/2026 05:11:55 PM [INFO] Display reset (COM port may change)...
+09/12/2026 05:12:05 PM [DEBUG] Waiting for device /dev/ttyACM1 - UsbMonitor to be turned ON...
+09/12/2026 05:12:07 PM [DEBUG] Detected screen turned ON
+09/12/2026 05:12:07 PM [DEBUG] Auto detected COM port: /dev/ttyACM0
+09/12/2026 05:12:07 PM [DEBUG] Display ID returned: chs_5inch.dev1_rom1.89
+09/12/2026 05:12:07 PM [DEBUG] HW sub-revision detected: SubRevision.REV_2INCH, ROM version: 89

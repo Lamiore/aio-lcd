@@ -110,49 +110,66 @@ def sambung_panel() -> LcdCommRevC | None:
 def putar(lcd: LcdCommRevC, bingkai: list[lg.Bingkai], ukuran: int, ulang: int) -> None:
     """Gelung pemutaran, berhenti begitu diminta.
 
-    Tidak mengejar ketertinggalan dengan melompati bingkai: layar ini ditulisi
-    berurutan, jadi melompat tidak menghemat apa pun — waktu terbesarnya di
-    pengiriman, bukan di jeda.
+    Mengikuti jam dinding, bukan sekadar menggambar berurutan. Kalau panel
+    tidak sanggup mengejar laju GIF-nya, bingkai yang sudah lewat waktunya
+    dilewati supaya animasinya tetap berjalan pada **kecepatan aslinya**,
+    cuma dengan bingkai lebih sedikit. Tanpa ini animasi 10 fps yang cuma
+    sanggup 3,6 fps akan tampil melambat — semua bingkai tampil, tapi
+    seluruh gerakannya jadi seperti gerak lambat.
+
+    Karena bingkai bisa dilewati, potongan yang dikirim dihitung terhadap
+    bingkai yang **terakhir benar-benar digambar**, bukan terhadap bingkai
+    sebelumnya di daftar.
     """
     x, y = lg.posisi_tengah(ukuran, KANVAS)
-    perintah = lg.susun_perintah(bingkai, x, y)
 
-    # Bingkai pertama harus utuh: isi layar saat ini tidak diketahui, sedangkan
-    # perintah-perintah berikutnya menganggap bingkai sebelumnya sudah tampil.
+    # Bingkai pertama harus utuh: isi layar saat ini tidak diketahui.
     lcd.DisplayPILImage(bingkai[0].gambar, x, y)
+    terakhir = bingkai[0].gambar
 
     putaran = 0
-    terkirim = 0
+    terkirim = 1
+    dilewati = 0
     waktu_kirim = 0.0
     awal = time.monotonic()
+    jadwal = awal  # kapan bingkai berikutnya seharusnya tampil
 
     def lapor():
         lama = time.monotonic() - awal
-        if terkirim and lama > 0:
-            # Dua angka berbeda: laju kirim mentah (batas panel) dan laju
-            # tayang (termasuk jeda antar bingkai sesuai maunya GIF).
-            print(f"{terkirim} bingkai dalam {lama:.1f} dtk — "
-                  f"tayang {terkirim / lama:.1f} fps, "
+        if terkirim and lama > 0 and waktu_kirim > 0:
+            print(f"{terkirim} bingkai digambar, {dilewati} dilewati, dalam {lama:.1f} dtk — "
+                  f"tayang {(terkirim + dilewati) / lama:.1f} fps efektif, "
                   f"kirim {terkirim / waktu_kirim:.1f} fps", flush=True)
 
     while not _berhenti:
-        for p in perintah:
+        for indeks, b in enumerate(bingkai):
             if _berhenti:
                 lapor()
                 return
+            if putaran == 0 and indeks == 0:
+                jadwal += b.durasi
+                continue  # sudah digambar di atas
+
+            jadwal += b.durasi
+            sekarang = time.monotonic()
+
+            # Sudah lewat jadwalnya lebih dari satu bingkai penuh: lewati,
+            # jangan digambar. Bingkai terakhir satu putaran tidak pernah
+            # dilewati supaya gambar akhirnya tidak nyangkut di tengah gerakan.
+            if sekarang > jadwal + b.durasi and indeks != len(bingkai) - 1:
+                dilewati += 1
+                continue
+
             mulai = time.monotonic()
-            if p.gambar is not None:
-                lcd.DisplayPILImage(p.gambar, p.x, p.y)
-            selesai = time.monotonic()
+            lcd.DisplayPILImage(*lg.potong_perubahan(terakhir, b.gambar, x, y))
+            waktu_kirim += time.monotonic() - mulai
+            terakhir = b.gambar
             terkirim += 1
-            waktu_kirim += selesai - mulai
-            sisa = p.durasi - (selesai - mulai)
-            if sisa > 0:
-                # Tidur dipecah supaya permintaan berhenti tidak menunggu
-                # bingkai lambat selesai.
-                akhir = time.monotonic() + sisa
-                while time.monotonic() < akhir and not _berhenti:
-                    time.sleep(min(0.05, akhir - time.monotonic()))
+
+            # Tidur dipecah supaya permintaan berhenti tidak menunggu lama.
+            while time.monotonic() < jadwal and not _berhenti:
+                time.sleep(min(0.05, jadwal - time.monotonic()))
+
         putaran += 1
         if ulang and putaran >= ulang:
             lapor()

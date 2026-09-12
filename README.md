@@ -188,7 +188,43 @@ Pemutarnya **wajib** memakai Python venv upstream — pyserial dan pustaka
 panelnya cuma ada di sana, tidak di Python sistem.
 
 Diukur di perangkat dengan GIF 24 bingkai: **15,6 fps** di 240×240 dan
-**3,0 fps** di layar penuh — cocok dengan tabel di atas. Perkiraan yang
+**3,0 fps** di layar penuh — cocok dengan tabel di atas.
+
+### Kenapa layar penuh sering tetap mulus
+
+Yang dikirim tiap bingkai bukan seluruh layar, tapi **kotak yang isinya
+berubah** dari bingkai sebelumnya — panel menahan apa yang sudah digambar.
+Untuk GIF berlatar diam bedanya besar: terukur naik dari **3,0 fps ke 16,6 fps**
+pada 480×480 (kapasitas kirim 73,7 fps). GIF yang seluruh layarnya berubah tiap
+bingkai tetap 3,0 fps — memang tidak ada yang bisa dihemat.
+
+Memecah layar jadi petak-petak (2×2, 4×4, 16×16) sudah dicoba dan **tidak
+membantu**: kalau perubahannya tersebar, hampir semua petak ikut terkirim dan
+hasilnya lebih boros daripada satu kotak pembatas.
+
+### Laju mentahnya tidak bisa dipercepat dari perangkat lunak
+
+Sudah ditelusuri sampai habis, supaya tidak ada yang mengulang:
+
+- panel bicara di **480 Mbps** (USB high-speed) saat bangun, jadi busnya bukan
+  penghambat
+- menyiapkan payload di Python cuma **2,7 ms** dari 347 ms per bingkai — **1%**,
+  jadi bukan CPU
+- `serial_write` upstream satu panggilan `write()` tunggal, tanpa pemecahan atau
+  jeda buatan
+
+Sisanya adalah laju terima firmware panel itu sendiri: **~2,6 MB/detik**.
+
+### Bingkai dilewati kalau panel tidak sanggup mengejar
+
+Pemutarnya mengikuti jam dinding. Kalau laju GIF melebihi kemampuan panel,
+bingkai yang sudah lewat waktunya dilewati supaya animasinya tetap berjalan
+pada **kecepatan aslinya**, cuma dengan bingkai lebih sedikit. Tanpa ini,
+animasi 10 fps yang cuma sanggup 4 fps akan tampil seperti gerak lambat —
+semua bingkai tampil, tapi seluruh gerakannya molor.
+
+Terukur pada GIF 10 fps yang berubah 55% tiap bingkai, di 480×480:
+**9,0 fps efektif** (19 bingkai digambar, 21 dilewati). Perkiraan yang
 ditampilkan aplikasi sengaja dibuat lebih rendah dari kenyataan supaya tidak
 pernah menjanjikan lebih dari yang bisa ditepati.
 
@@ -265,7 +301,7 @@ dengan tangan.
 | `lcd_tema.py` | pembuatan tema, impor, symlink, penghapusan |
 | `lcd_gif.py` | pembacaan bingkai GIF, perkiraan fps |
 | `gif_pemutar.py` | pemutar GIF — jalan dengan venv upstream |
-| `uji_*.py` | 70 uji — `for f in uji_*.py; do python3 $f; done` |
+| `uji_*.py` | 84 uji — `for f in uji_*.py; do python3 $f; done` |
 | `pasang.sh` | pemasang, aman dijalankan berulang |
 | `config/config.yaml` | konfigurasi upstream yang sudah disetel |
 | `udev/` | aturan izin port serial |

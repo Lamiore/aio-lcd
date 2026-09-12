@@ -200,6 +200,32 @@ class UjiDelta(unittest.TestCase):
         self.assertIsNotNone(p[0].gambar)
         self.assertEqual((p[0].x, p[0].y), (7, 9))
 
+    def test_potong_perubahan_mengembalikan_kotak_kecil(self):
+        b = lg.muat_bingkai(self._latar_diam(), 240)
+        g, x, y = lg.potong_perubahan(b[0].gambar, b[1].gambar, 100, 100)
+        self.assertLess(g.width * g.height, 240 * 240, "seharusnya potongan, bukan bingkai utuh")
+        self.assertGreaterEqual(x, 100)
+        self.assertGreaterEqual(y, 100)
+
+    def test_potong_perubahan_kirim_utuh_kalau_beda_jauh(self):
+        b = lg.muat_bingkai(self._berubah_total(), 240)
+        g, x, y = lg.potong_perubahan(b[0].gambar, b[1].gambar, 5, 5)
+        self.assertEqual(g.size, (240, 240))
+        self.assertEqual((x, y), (5, 5))
+
+    def test_potong_perubahan_bingkai_kembar_tidak_kirim_apa_apa_besar(self):
+        im = Image.new("RGB", (240, 240), (9, 9, 9))
+        g, _, _ = lg.potong_perubahan(im, im, 0, 0)
+        self.assertEqual(g.size, (1, 1), "bingkai kembar tidak perlu kirim bingkai utuh")
+
+    def test_potong_perubahan_terhadap_bingkai_lompat(self):
+        # Kalau bingkai dilewati, pembandingnya bingkai terakhir yang digambar.
+        # Hasilnya harus tetap kotak yang mencakup kedua posisi benda.
+        b = lg.muat_bingkai(self._latar_diam(), 240)
+        dekat, _, _ = lg.potong_perubahan(b[0].gambar, b[1].gambar, 0, 0)
+        jauh, _, _ = lg.potong_perubahan(b[0].gambar, b[4].gambar, 0, 0)
+        self.assertGreater(jauh.width, dekat.width, "lompat lebih jauh = kotak lebih lebar")
+
     def test_rasio_berubah_membedakan_dua_watak(self):
         self.assertLess(lg.rasio_berubah(self._latar_diam()), 0.3)
         self.assertGreater(lg.rasio_berubah(self._berubah_total()), 0.9)

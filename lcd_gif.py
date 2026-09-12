@@ -169,6 +169,30 @@ class Perintah:
     durasi: float
 
 
+def potong_perubahan(
+    sebelum: Image.Image, sesudah: Image.Image, x0: int, y0: int
+) -> tuple[Image.Image, int, int]:
+    """Kembalikan (gambar, x, y) yang cukup dikirim untuk berpindah antar dua bingkai.
+
+    Dipakai saat pemutaran, bukan disiapkan di muka, karena bingkai bisa
+    dilewati kalau panel tidak sanggup mengejar — pembandingnya harus bingkai
+    yang terakhir benar-benar digambar. Ongkosnya ~1 ms untuk 480x480,
+    dibanding ratusan milidetik waktu kirim, jadi tidak terasa.
+
+    Kalau bedanya sudah melebihi AMBANG_UTUH, bingkai utuh yang dikirim:
+    datanya hampir sama banyak sementara pembaruan sebagian punya ongkos
+    perintah sendiri.
+    """
+    kotak = ImageChops.difference(sebelum, sesudah).getbbox()
+    if kotak is None:
+        # Tidak ada yang berubah; kirim satu piksel saja daripada bingkai utuh.
+        return sesudah.crop((0, 0, 1, 1)), x0, y0
+    lebar, tinggi = kotak[2] - kotak[0], kotak[3] - kotak[1]
+    if lebar * tinggi >= sesudah.width * sesudah.height * AMBANG_UTUH:
+        return sesudah, x0, y0
+    return sesudah.crop(kotak), x0 + kotak[0], y0 + kotak[1]
+
+
 def susun_perintah(bingkai: list[Bingkai], x0: int, y0: int) -> list[Perintah]:
     """Ubah daftar bingkai jadi langkah-langkah yang hanya mengirim bagian berubah.
 
