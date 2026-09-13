@@ -16,6 +16,9 @@ Repo ini **bukan** salinan proyek itu. Isinya perekat di sekelilingnya:
 konfigurasi, izin perangkat, autostart, dan aplikasi temanya.
 
 ![status](https://img.shields.io/badge/diuji-Fedora%2044%20·%20GNOME%2050%20Wayland-blue)
+[![lisensi](https://img.shields.io/badge/lisensi-GPL--3.0-blue)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)
+![GTK4](https://img.shields.io/badge/GTK4-libadwaita-4A86CF?logo=gtk&logoColor=white)
 
 ---
 
